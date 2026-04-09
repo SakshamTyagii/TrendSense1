@@ -1,33 +1,161 @@
 import { config } from './config';
+import { getCached, setCache } from './aiCache';
 import type { NewsItem, CreatorScript, CreatorInsight } from '../types';
 
-async function callOpenAI(prompt: string, maxTokens = 1000): Promise<string> {
-  if (!config.hasOpenAi) {
-    return '';
+// ─── Provider cooldown tracking ────────────────────────────────────────
+// When a provider returns 429, skip it for 15 minutes
+const COOLDOWN_MS = 15 * 60 * 1000;
+const cooldowns: Record<string, number> = {};
+
+function isOnCooldown(provider: string): boolean {
+  const until = cooldowns[provider];
+  if (!until) return false;
+  if (Date.now() >= until) { delete cooldowns[provider]; return false; }
+  return true;
+}
+
+function setCooldown(provider: string): void {
+  cooldowns[provider] = Date.now() + COOLDOWN_MS;
+}
+
+function is429(err: any): boolean {
+  return err?.message?.includes('429') || false;
+}
+
+function cleanJson(raw: string): string {
+  return raw.replace(/^```(?:json)?\s*\n?/i, '').replace(/\n?```\s*$/i, '').trim();
+}
+
+// ─── Provider: Groq (Llama 3.3 70B) ───────────────────────────────────
+async function callGroq(prompt: string): Promise<string> {
+  const response = await fetch('https://api.groq.com/openai/v1/chat/completions', {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      'Authorization': `Bearer ${config.groqApiKey}`,
+    },
+    body: JSON.stringify({
+      model: 'llama-3.3-70b-versatile',
+      messages: [{ role: 'user', content: prompt }],
+      temperature: 0.7,
+      response_format: { type: 'json_object' },
+    }),
+  });
+
+  if (!response.ok) {
+    const err = await response.text();
+    throw new Error(`Groq API error (${response.status}): ${err}`);
   }
 
-  try {
-    const response = await fetch('https://api.openai.com/v1/chat/completions', {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'Authorization': `Bearer ${config.openaiApiKey}`,
-      },
-      body: JSON.stringify({
-        model: 'gpt-4o-mini',
-        messages: [{ role: 'user', content: prompt }],
-        max_tokens: maxTokens,
+  const data = await response.json();
+  return data.choices?.[0]?.message?.content || '';
+}
+
+// ─── Provider: Cerebras (gpt-oss-120b) ────────────────────────────────
+async function callCerebras(prompt: string): Promise<string> {
+  const response = await fetch('https://api.cerebras.ai/v1/chat/completions', {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      'Authorization': `Bearer ${config.cerebrasApiKey}`,
+    },
+    body: JSON.stringify({
+      model: 'llama3.1-8b',
+      messages: [{ role: 'user', content: prompt }],
+      temperature: 0.7,
+      response_format: { type: 'json_object' },
+    }),
+  });
+
+  if (!response.ok) {
+    const err = await response.text();
+    throw new Error(`Cerebras API error (${response.status}): ${err}`);
+  }
+
+  const data = await response.json();
+  return data.choices?.[0]?.message?.content || '';
+}
+
+// ─── Provider: Gemini (2.0 Flash) ──────────────────────────────────────
+async function callGemini(prompt: string): Promise<string> {
+  const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=${config.geminiApiKey}`;
+
+  const response = await fetch(url, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      contents: [{ parts: [{ text: prompt }] }],
+      generationConfig: {
         temperature: 0.7,
-      }),
-    });
+        responseMimeType: 'application/json',
+      },
+    }),
+  });
 
-    if (!response.ok) throw new Error('OpenAI API error');
-    const data = await response.json();
-    return data.choices[0]?.message?.content || '';
-  } catch (error) {
-    console.error('OpenAI error:', error);
-    return '';
+  if (!response.ok) {
+    const err = await response.text();
+    throw new Error(`Gemini API error (${response.status}): ${err}`);
   }
+
+  const data = await response.json();
+  return data.candidates?.[0]?.content?.parts?.[0]?.text || '';
+}
+
+// ─── Provider: OpenRouter (free models) ────────────────────────────────
+async function callOpenRouter(prompt: string): Promise<string> {
+  const response = await fetch('https://openrouter.ai/api/v1/chat/completions', {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      'Authorization': `Bearer ${config.openrouterApiKey}`,
+      'HTTP-Referer': window.location.origin,
+      'X-Title': 'TrendSense',
+    },
+    body: JSON.stringify({
+      model: 'nvidia/nemotron-3-super-120b-a12b:free',
+      messages: [{ role: 'user', content: prompt }],
+      temperature: 0.7,
+      response_format: { type: 'json_object' },
+    }),
+  });
+
+  if (!response.ok) {
+    const err = await response.text();
+    throw new Error(`OpenRouter API error (${response.status}): ${err}`);
+  }
+
+  const data = await response.json();
+  return data.choices?.[0]?.message?.content || '';
+}
+
+// ─── Unified caller: Groq → Cerebras → Gemini → OpenRouter ────────────
+async function callAI(prompt: string): Promise<string> {
+  if (!config.hasAI) {
+    throw new Error('No AI API key configured. Add at least one of: VITE_GROQ_API_KEY, VITE_CEREBRAS_API_KEY, VITE_GEMINI_API_KEY, or VITE_OPENROUTER_API_KEY to your .env file.');
+  }
+
+  const providers: { name: string; hasKey: boolean; fn: (p: string) => Promise<string> }[] = [
+    { name: 'groq', hasKey: config.hasGroq, fn: callGroq },
+    { name: 'cerebras', hasKey: config.hasCerebras, fn: callCerebras },
+    { name: 'gemini', hasKey: config.hasGemini, fn: callGemini },
+    { name: 'openrouter', hasKey: config.hasOpenRouter, fn: callOpenRouter },
+  ];
+
+  const errors: string[] = [];
+
+  for (const { name, hasKey, fn } of providers) {
+    if (!hasKey || isOnCooldown(name)) continue;
+    try {
+      const result = await fn(prompt);
+      if (result) return cleanJson(result);
+    } catch (err: any) {
+      console.warn(`${name} failed, trying next provider:`, err.message);
+      if (is429(err)) setCooldown(name);
+      errors.push(err.message);
+    }
+  }
+
+  throw new Error(`All AI providers failed:\n${errors.join('\n')}`);
 }
 
 export async function generateExplanation(news: NewsItem): Promise<{
@@ -43,138 +171,145 @@ export async function generateExplanation(news: NewsItem): Promise<{
     };
   }
 
-  const prompt = `You are a news explainer for a modern audience. Given this news headline and description, generate an engaging, conversational explanation.
+  // Check localStorage cache by article URL
+  const cacheKey = news.sourceUrl || news.title;
+  const cached = getCached<{ explanation: string; whyTrending: string; whyMatters: string }>('explanation', cacheKey);
+  if (cached) return cached;
+
+  const prompt = `You are an expert news analyst for a modern, Gen-Z audience. Given this news article, produce a rich, engaging breakdown.
 
 Headline: ${news.title}
 Description: ${news.description}
 Source: ${news.source}
+Category: ${news.category}
 
-Respond in JSON format:
+Respond in JSON format with these exact keys:
 {
-  "explanation": "2 paragraphs, conversational, easy to understand, no bullet points",
-  "whyTrending": "1 paragraph on why this is trending right now",
-  "whyMatters": "1 paragraph on why this matters to everyday people"
-}`;
+  "explanation": "Write a thorough 2-3 paragraph explanation of what happened. Be conversational and clear. Cover the key facts, the people/organizations involved, and the timeline. Each paragraph should be 3-5 sentences. No bullet points.",
+  "whyTrending": "Write 2 paragraphs explaining why this is trending right now. Reference social media buzz, public interest, timing, and relevance. Each paragraph 2-3 sentences.",
+  "whyMatters": "Write 2 paragraphs on why this matters to everyday people. Explain the real-world impact on jobs, money, health, rights, or daily life. Each paragraph 2-3 sentences."
+}
 
-  const result = await callOpenAI(prompt);
-  try {
-    const parsed = JSON.parse(result);
-    return parsed;
-  } catch {
-    return {
-      explanation: news.description,
-      whyTrending: 'This story is gaining significant attention across major news outlets.',
-      whyMatters: 'This development could have far-reaching implications for millions of people.',
-    };
-  }
+Make it informative but engaging — like a smart friend explaining the news over coffee.`;
+
+  const result = await callAI(prompt);
+  const parsed = JSON.parse(result);
+  const data = {
+    explanation: parsed.explanation,
+    whyTrending: parsed.whyTrending,
+    whyMatters: parsed.whyMatters,
+  };
+  setCache('explanation', cacheKey, data);
+  return data;
 }
 
 export async function generateCreatorScript(
   news: NewsItem,
   format: CreatorScript['format'] = 'youtube-short'
 ): Promise<CreatorScript> {
-  const formatGuide = {
-    'youtube-short': '60 seconds, punchy, hook-driven',
-    'tiktok': '30-45 seconds, trendy, fast-paced',
-    'instagram-reel': '30-60 seconds, visual, engaging',
-    'long-form': '5-10 minutes, detailed, educational',
-  };
-
-  if (!config.hasOpenAi) {
-    return generateDemoScript(news, format);
+  if (!config.hasAI) {
+    throw new Error('No AI API key configured. Add VITE_GROQ_API_KEY or VITE_GEMINI_API_KEY to your .env file.');
   }
 
-  const prompt = `You are a viral content scriptwriter. Create a ${format} script for this news story.
+  // Check cache by article URL + format
+  const cacheKey = (news.sourceUrl || news.title) + ':' + format;
+  const cached = getCached<CreatorScript>('script', cacheKey);
+  if (cached) return { ...cached, id: `script-${Date.now()}`, createdAt: new Date().toISOString() };
 
-Format: ${formatGuide[format]}
+  const formatGuide = {
+    'youtube-short': '60 seconds, punchy, hook-driven, vertical video',
+    'tiktok': '30-45 seconds, trendy, fast-paced, casual tone',
+    'instagram-reel': '30-60 seconds, visual, polished, engaging captions',
+    'long-form': '5-10 minutes, detailed, educational, structured with chapters',
+  };
+
+  const prompt = `You are a top-tier viral content scriptwriter. Create a complete ${format} script for this news story.
+
+Format guidelines: ${formatGuide[format]}
 
 Headline: ${news.title}
-Explanation: ${news.explanation}
+Context: ${news.explanation || news.description}
+Category: ${news.category}
 
 Respond in JSON:
 {
-  "hook": "Opening hook (first 3 seconds)",
-  "body": "Main content",
-  "ending": "Call to action / closing",
-  "fullScript": "Complete script ready to read",
+  "hook": "Opening hook (first 3 seconds) — must stop the scroll. Be provocative or surprising.",
+  "body": "Main content — deliver the story with energy. Include specific facts, names, numbers. Make it feel urgent.",
+  "ending": "Strong call to action / closing — drive engagement (comment, follow, share).",
+  "fullScript": "Complete script ready to read aloud, with natural pauses and emphasis cues.",
   "duration": "Estimated duration"
 }`;
 
-  const result = await callOpenAI(prompt, 1500);
-  try {
-    const parsed = JSON.parse(result);
-    return {
-      id: `script-${Date.now()}`,
-      newsId: news.id,
-      ...parsed,
-      format,
-      createdAt: new Date().toISOString(),
-    };
-  } catch {
-    return generateDemoScript(news, format);
-  }
-}
-
-function generateDemoScript(news: NewsItem, format: CreatorScript['format']): CreatorScript {
-  const hook = `Stop scrolling. ${news.title.split(':')[0]} just changed everything.`;
-  const body = news.explanation || news.description;
-  const ending = `Follow for more breaking news explained simply. Drop a comment — what do you think about this?`;
-  
-  return {
+  const result = await callAI(prompt);
+  const parsed = JSON.parse(result);
+  const script: CreatorScript = {
     id: `script-${Date.now()}`,
     newsId: news.id,
-    hook,
-    body,
-    ending,
-    fullScript: `${hook}\n\n${body}\n\n${ending}`,
+    ...parsed,
     format,
-    duration: format === 'long-form' ? '5-7 min' : '45-60 sec',
     createdAt: new Date().toISOString(),
   };
+  setCache('script', cacheKey, script);
+  return script;
 }
 
 export async function generateCreatorInsights(news: NewsItem): Promise<CreatorInsight> {
-  if (!config.hasOpenAi) {
-    return {
-      viralReason: news.viralAngle || `This story taps into a topic that affects millions of people. The emotional resonance combined with the timeliness makes it perfect for social media engagement.`,
-      bestAngle: news.bestContentAngle || `Lead with the human impact angle. Make it personal — how does this affect YOUR audience specifically? Use a provocative question as your hook.`,
-      targetAudience: 'News-aware millennials and Gen Z, content creators, professionals in the relevant industry',
-      suggestedHashtags: ['#BreakingNews', '#Trending', '#Explained', `#${news.category}`, '#NewsUpdate'],
-      engagementTips: [
-        'Post within 2 hours of the story breaking for maximum reach',
-        'Use a controversial take or question as your hook',
-        'Include a call-to-action asking for opinions',
-        'Cross-post across platforms with format-specific edits',
-        'Reply to every comment in the first hour',
-      ],
-    };
+  if (!config.hasAI) {
+    throw new Error('No AI API key configured. Add VITE_GROQ_API_KEY or VITE_GEMINI_API_KEY to your .env file.');
   }
 
-  const prompt = `You are a social media strategist. Analyze this news story for creator content potential.
+  const cacheKey = news.sourceUrl || news.title;
+  const cached = getCached<CreatorInsight>('insights', cacheKey);
+  if (cached) return cached;
+
+  const prompt = `You are a social media strategist and content consultant. Analyze this news story for creator content potential.
 
 Headline: ${news.title}
+Description: ${news.description}
 Category: ${news.category}
 Trend Score: ${news.trendScore}
 
 Respond in JSON:
 {
-  "viralReason": "Why this will go viral",
-  "bestAngle": "Best angle for content creation",
-  "targetAudience": "Who to target",
-  "suggestedHashtags": ["5 relevant hashtags"],
-  "engagementTips": ["5 specific tips"]
+  "viralReason": "2-3 sentences on exactly why this story has viral potential",
+  "bestAngle": "2-3 sentences on the best unique angle a creator should take",
+  "targetAudience": "Specific audience description — demographics, interests, platforms",
+  "suggestedHashtags": ["exactly 7 relevant trending hashtags"],
+  "engagementTips": ["5 specific, actionable tips for maximizing engagement on this story"]
 }`;
 
-  const result = await callOpenAI(prompt);
-  try {
-    return JSON.parse(result);
-  } catch {
-    return {
-      viralReason: news.viralAngle || 'High emotional resonance with broad audience appeal.',
-      bestAngle: news.bestContentAngle || 'Lead with the human impact angle.',
-      targetAudience: 'News-aware millennials and Gen Z',
-      suggestedHashtags: ['#BreakingNews', '#Trending', `#${news.category}`],
-      engagementTips: ['Post quickly', 'Use a strong hook', 'Engage with comments'],
-    };
-  }
+  const result = await callAI(prompt);
+  const data = JSON.parse(result);
+  setCache('insights', cacheKey, data);
+  return data;
+}
+
+export async function generateNarrationScript(news: NewsItem): Promise<string> {
+  const cacheKey = news.sourceUrl || news.title;
+  const cached = getCached<string>('narration', cacheKey);
+  if (cached) return cached;
+
+  const prompt = `You are a charismatic podcast host delivering a breaking news update. Write a 30-second narration script for this story that sounds natural when read aloud by a text-to-speech engine.
+
+Headline: ${news.title}
+Description: ${news.description}
+${news.explanation ? `Context: ${news.explanation}` : ''}
+
+Rules:
+- Write ONLY the narration text, no labels, no stage directions
+- ~80-100 words (30 seconds of speech)
+- Start with a punchy hook that grabs attention
+- Use short sentences for natural pauses
+- Be conversational — like talking to a friend
+- Include the key facts but keep it engaging
+- End with a thought-provoking line
+- No emojis, no hashtags, no bullet points
+
+Respond in JSON: { "narration": "your narration text here" }`;
+
+  const result = await callAI(prompt);
+  const parsed = JSON.parse(result);
+  const narration = parsed.narration;
+  setCache('narration', cacheKey, narration);
+  return narration;
 }

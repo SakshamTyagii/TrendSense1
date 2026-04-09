@@ -5,8 +5,9 @@ export interface NewsItem {
   explanation: string;
   whyTrending: string;
   whyMatters: string;
+  narrationScript?: string;
   category: Category;
-  source: TrustedSource;
+  source: string;
   sourceUrl: string;
   imageUrl: string;
   videoUrl?: string;
@@ -16,6 +17,7 @@ export interface NewsItem {
   trendScore: number;
   viralAngle?: string;
   bestContentAngle?: string;
+  reelCount?: number;
   tags: string[];
 }
 
@@ -70,4 +72,19 @@ export interface CreatorInsight {
   targetAudience: string;
   suggestedHashtags: string[];
   engagementTips: string[];
+}
+
+export interface CreatorReel {
+  id: string;
+  newsId: string;
+  creatorId: string;
+  creatorName: string;
+  creatorAvatar: string;
+  videoUrl: string;
+  thumbnailUrl: string;
+  caption: string;
+  likes: number;
+  views: number;
+  duration: number;
+  createdAt: string;
 }

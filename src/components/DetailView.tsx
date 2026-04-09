@@ -1,14 +1,19 @@
-import { useEffect } from 'react';
+import { useEffect, useState } from 'react';
 import { motion } from 'framer-motion';
-import { ArrowLeft, Volume2, VolumeX, Bookmark, BookmarkCheck, Share2, ExternalLink, Sparkles, Clock, TrendingUp } from 'lucide-react';
+import { ArrowLeft, Volume2, VolumeX, Bookmark, BookmarkCheck, Share2, ExternalLink, Sparkles, Clock, TrendingUp, Loader2 } from 'lucide-react';
 import { useStore } from '../store/useStore';
 import { speakText, stopSpeaking } from '../lib/ttsService';
+import { generateExplanation, generateNarrationScript } from '../lib/aiService';
 import { formatDistanceToNow } from 'date-fns';
+import ReelCarousel from './ReelCarousel';
 
 export default function DetailView() {
-  const { selectedNews: news, setView, isPlaying, currentAudioId, setPlaying, user, toggleSaved, setCreatorMode } = useStore();
+  const { selectedNews: news, setView, setSelectedNews, updateNewsItem, isPlaying, currentAudioId, setPlaying, user, toggleSaved, setCreatorMode } = useStore();
 
 
+  const [isEnriching, setIsEnriching] = useState(false);
+  const [enrichError, setEnrichError] = useState<string | null>(null);
+  const [isLoadingAudio, setIsLoadingAudio] = useState(false);
   const isCurrentPlaying = isPlaying && currentAudioId === news?.id;
   const isSaved = user?.savedStories.includes(news?.id || '') || false;
 
@@ -19,17 +24,52 @@ export default function DetailView() {
     };
   }, []);
 
+  // Enrich article with AI-generated content if missing
+  useEffect(() => {
+    if (news && !news.explanation) {
+      setIsEnriching(true);
+      setEnrichError(null);
+      generateExplanation(news)
+        .then((result) => {
+          const enriched = { ...news, ...result };
+          setSelectedNews(enriched);
+          updateNewsItem(enriched);
+          setIsEnriching(false);
+        })
+        .catch((err) => {
+          console.error('AI enrichment failed:', err);
+          setIsEnriching(false);
+          setEnrichError(err?.message || 'Failed to generate AI explanation');
+        });
+    }
+  }, [news?.id]);
+
   if (!news) return null;
 
-  const handlePlayAudio = () => {
+  const handlePlayAudio = async () => {
     if (isCurrentPlaying) {
       stopSpeaking();
       setPlaying(false);
-    } else {
-      const fullText = `${news.title}. ${news.explanation || news.description}. Why this is trending: ${news.whyTrending}. Why it matters: ${news.whyMatters}`;
-      speakText(fullText, () => setPlaying(false));
-      setPlaying(true, news.id);
+      return;
     }
+
+    // Generate full narration for detail view (longer than feed version)
+    let narration = news.narrationScript;
+    if (!narration) {
+      setIsLoadingAudio(true);
+      try {
+        narration = await generateNarrationScript(news);
+        const enriched = { ...news, narrationScript: narration };
+        setSelectedNews(enriched);
+        updateNewsItem(enriched);
+      } catch {
+        narration = `${news.title}. ${news.explanation || news.description}`;
+      }
+      setIsLoadingAudio(false);
+    }
+
+    speakText(narration, () => setPlaying(false));
+    setPlaying(true, news.id);
   };
 
   const handleCreator = () => {
@@ -56,7 +96,7 @@ export default function DetailView() {
     >
       {/* Hero */}
       <div className="relative h-72 sm:h-80">
-        <img src={news.imageUrl} alt="" className="w-full h-full object-cover" />
+        <img src={news.imageUrl} alt="" className="w-full h-full object-cover" onError={(e) => { (e.target as HTMLImageElement).src = `/images/category-${news.category}.jpg`; }} />
         <div className="absolute inset-0 bg-gradient-to-t from-[#0a0a0f] via-[#0a0a0f]/60 to-transparent" />
         
         {/* Top bar */}
@@ -114,13 +154,18 @@ export default function DetailView() {
         <div className="flex items-center gap-3 mb-8">
           <button
             onClick={handlePlayAudio}
+            disabled={isLoadingAudio}
             className={`flex items-center gap-2 px-6 py-3 rounded-full font-semibold text-sm transition-all ${
               isCurrentPlaying
                 ? 'bg-indigo-500 text-white shadow-lg shadow-indigo-500/30'
+                : isLoadingAudio
+                ? 'bg-white/10 text-white/50'
                 : 'bg-white/10 text-white hover:bg-white/15'
             }`}
           >
-            {isCurrentPlaying ? (
+            {isLoadingAudio ? (
+              <><Loader2 className="w-4 h-4 animate-spin" /> Preparing...</>
+            ) : isCurrentPlaying ? (
               <><VolumeX className="w-4 h-4" /> Stop Listening</>
             ) : (
               <><Volume2 className="w-4 h-4" /> Listen to Story</>
@@ -141,10 +186,16 @@ export default function DetailView() {
             <h3 className="text-lg font-bold text-white mb-3 flex items-center gap-2">
               <div className="w-1 h-5 rounded-full bg-indigo-500" />
               What Happened
+              {isEnriching && <Loader2 className="w-4 h-4 text-indigo-400 animate-spin" />}
             </h3>
             <p className="text-gray-300 leading-relaxed text-[15px] whitespace-pre-line">
               {news.explanation || news.description}
             </p>
+            {enrichError && (
+              <p className="mt-3 text-sm text-red-400/80 bg-red-500/10 rounded-lg px-4 py-3">
+                {enrichError}
+              </p>
+            )}
           </section>
 
           {/* Why Trending */}
@@ -180,6 +231,9 @@ export default function DetailView() {
               ))}
             </div>
           )}
+
+          {/* Creator Reels */}
+          <ReelCarousel newsId={news.id} />
 
           {/* Source reference */}
           <div className="border-t border-white/5 pt-6">

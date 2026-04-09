@@ -1,41 +1,54 @@
-import { useState, useEffect } from 'react';
+import { useState, useRef } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { ArrowLeft, Sparkles, Download, Copy, Check, Play, Pause, FileText, Mic, TrendingUp, Target, Hash, Lightbulb, Loader2, ChevronDown, ChevronUp } from 'lucide-react';
+import { ArrowLeft, Sparkles, Download, Copy, Check, Play, Pause, FileText, Mic, TrendingUp, Target, Hash, Lightbulb, Loader2, ChevronDown, ChevronUp, Upload, Film, X } from 'lucide-react';
 import { useStore } from '../store/useStore';
 import { generateCreatorScript, generateCreatorInsights } from '../lib/aiService';
 import { speakText, stopSpeaking, downloadScript } from '../lib/ttsService';
-import type { CreatorScript, CreatorInsight } from '../types';
+import type { CreatorScript, CreatorInsight, CreatorReel } from '../types';
 
 export default function CreatorStudio() {
-  const { selectedNews: news, setView, isPlaying, setPlaying, addScript } = useStore();
-  const [activeTab, setActiveTab] = useState<'script' | 'voiceover' | 'insights'>('script');
+  const { selectedNews: news, setView, isPlaying, setPlaying, addScript, addReel, user } = useStore();
+  const [activeTab, setActiveTab] = useState<'script' | 'voiceover' | 'insights' | 'upload'>('script');
   const [format, setFormat] = useState<CreatorScript['format']>('youtube-short');
   const [script, setScript] = useState<CreatorScript | null>(null);
   const [insights, setInsights] = useState<CreatorInsight | null>(null);
   const [isGenerating, setIsGenerating] = useState(false);
+  const [scriptError, setScriptError] = useState<string | null>(null);
   const [copied, setCopied] = useState(false);
   const [expandedInsight, setExpandedInsight] = useState<string | null>('viral');
-
-  useEffect(() => {
-    if (news) {
-      handleGenerateScript();
-      handleGenerateInsights();
-    }
-  }, [news]);
+  
+  // Upload reel state
+  const [videoFile, setVideoFile] = useState<File | null>(null);
+  const [videoPreviewUrl, setVideoPreviewUrl] = useState<string | null>(null);
+  const [reelCaption, setReelCaption] = useState('');
+  const [isUploading, setIsUploading] = useState(false);
+  const [uploadSuccess, setUploadSuccess] = useState(false);
+  const fileInputRef = useRef<HTMLInputElement>(null);
 
   const handleGenerateScript = async () => {
     if (!news) return;
     setIsGenerating(true);
-    const result = await generateCreatorScript(news, format);
-    setScript(result);
-    addScript(result);
-    setIsGenerating(false);
+    setScriptError(null);
+    try {
+      const result = await generateCreatorScript(news, format);
+      setScript(result);
+      addScript(result);
+    } catch (err: any) {
+      console.error('Script generation failed:', err);
+      setScriptError(err?.message || 'Failed to generate script');
+    } finally {
+      setIsGenerating(false);
+    }
   };
 
   const handleGenerateInsights = async () => {
     if (!news) return;
-    const result = await generateCreatorInsights(news);
-    setInsights(result);
+    try {
+      const result = await generateCreatorInsights(news);
+      setInsights(result);
+    } catch (err: any) {
+      console.error('Insights generation failed:', err);
+    }
   };
 
   const handleCopy = (text: string) => {
@@ -58,6 +71,55 @@ export default function CreatorStudio() {
     if (script) {
       downloadScript(script.fullScript, `trendsense-script-${format}`);
     }
+  };
+
+  const handleVideoSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    if (!file.type.startsWith('video/')) return;
+    
+    setVideoFile(file);
+    setVideoPreviewUrl(URL.createObjectURL(file));
+    setUploadSuccess(false);
+  };
+
+  const handleUploadReel = async () => {
+    if (!videoFile || !news || !user) return;
+    setIsUploading(true);
+    
+    // Store video as blob URL (IndexedDB for production, URL for MVP)
+    const videoUrl = videoPreviewUrl || URL.createObjectURL(videoFile);
+    
+    const reel: CreatorReel = {
+      id: `reel-${Date.now()}`,
+      newsId: news.id,
+      creatorId: user.id,
+      creatorName: user.name,
+      creatorAvatar: user.avatar,
+      videoUrl,
+      thumbnailUrl: '',
+      caption: reelCaption || `My take on: ${news.title}`,
+      likes: 0,
+      views: 0,
+      duration: 30,
+      createdAt: new Date().toISOString(),
+    };
+    
+    addReel(reel);
+    
+    // Simulate brief upload delay
+    await new Promise(r => setTimeout(r, 800));
+    setIsUploading(false);
+    setUploadSuccess(true);
+    setVideoFile(null);
+    setReelCaption('');
+  };
+
+  const handleRemoveVideo = () => {
+    if (videoPreviewUrl) URL.revokeObjectURL(videoPreviewUrl);
+    setVideoFile(null);
+    setVideoPreviewUrl(null);
+    setUploadSuccess(false);
   };
 
   if (!news) return null;
@@ -99,6 +161,7 @@ export default function CreatorStudio() {
             { id: 'script' as const, label: 'Script', icon: FileText },
             { id: 'voiceover' as const, label: 'Voiceover', icon: Mic },
             { id: 'insights' as const, label: 'Insights', icon: Lightbulb },
+            { id: 'upload' as const, label: 'Upload Reel', icon: Upload },
           ].map(tab => (
             <button
               key={tab.id}
@@ -141,7 +204,8 @@ export default function CreatorStudio() {
                       key={f.id}
                       onClick={() => {
                         setFormat(f.id);
-                        setTimeout(handleGenerateScript, 100);
+                        setScript(null);
+                        setScriptError(null);
                       }}
                       className={`flex flex-col items-center gap-1 p-3 rounded-xl text-xs transition-all ${
                         format === f.id
@@ -160,6 +224,31 @@ export default function CreatorStudio() {
                 <div className="flex flex-col items-center justify-center py-16 gap-4">
                   <Loader2 className="w-8 h-8 text-purple-400 animate-spin" />
                   <p className="text-gray-500 text-sm">Generating your script...</p>
+                </div>
+              ) : scriptError ? (
+                <div className="flex flex-col items-center justify-center py-16 gap-4 text-center">
+                  <p className="text-red-400 text-sm">{scriptError}</p>
+                  <button
+                    onClick={handleGenerateScript}
+                    className="flex items-center gap-2 px-6 py-3 rounded-full bg-purple-500/20 text-purple-300 font-semibold text-sm hover:bg-purple-500/30 transition-all border border-purple-500/20"
+                  >
+                    <Sparkles className="w-4 h-4" />
+                    Try Again
+                  </button>
+                </div>
+              ) : !script ? (
+                <div className="flex flex-col items-center justify-center py-16 gap-4 text-center">
+                  <div className="w-16 h-16 rounded-full bg-purple-500/10 flex items-center justify-center">
+                    <Sparkles className="w-8 h-8 text-purple-400" />
+                  </div>
+                  <p className="text-gray-400 text-sm">Pick a format above, then generate your script</p>
+                  <button
+                    onClick={handleGenerateScript}
+                    className="flex items-center gap-2 px-6 py-3 rounded-full bg-gradient-to-r from-purple-500 to-pink-500 text-white font-semibold text-sm shadow-lg shadow-purple-500/20"
+                  >
+                    <Sparkles className="w-4 h-4" />
+                    Generate Script
+                  </button>
                 </div>
               ) : script ? (
                 <div className="space-y-4">
@@ -314,7 +403,7 @@ export default function CreatorStudio() {
           )}
 
           {/* Insights Tab */}
-          {activeTab === 'insights' && insights && (
+          {activeTab === 'insights' && (
             <motion.div
               key="insights"
               initial={{ opacity: 0, y: 10 }}
@@ -322,6 +411,22 @@ export default function CreatorStudio() {
               exit={{ opacity: 0, y: -10 }}
               className="space-y-4"
             >
+              {!insights ? (
+                <div className="flex flex-col items-center justify-center py-16 gap-4 text-center">
+                  <div className="w-16 h-16 rounded-full bg-amber-500/10 flex items-center justify-center">
+                    <Lightbulb className="w-8 h-8 text-amber-400" />
+                  </div>
+                  <p className="text-gray-400 text-sm">Get AI-powered insights for this story</p>
+                  <button
+                    onClick={handleGenerateInsights}
+                    className="flex items-center gap-2 px-6 py-3 rounded-full bg-gradient-to-r from-amber-500 to-orange-500 text-white font-semibold text-sm shadow-lg shadow-amber-500/20"
+                  >
+                    <Lightbulb className="w-4 h-4" />
+                    Generate Insights
+                  </button>
+                </div>
+              ) : (
+                <>
               {/* Viral Reason */}
               <div
                 className="bg-gradient-to-r from-amber-500/10 to-orange-500/10 border border-amber-500/20 rounded-2xl overflow-hidden"
@@ -430,6 +535,122 @@ export default function CreatorStudio() {
                 {copied ? <Check className="w-4 h-4 text-green-400" /> : <Copy className="w-4 h-4" />}
                 {copied ? 'Copied!' : 'Copy All Insights'}
               </button>
+                </>
+              )}
+            </motion.div>
+          )}
+
+          {/* Upload Reel Tab */}
+          {activeTab === 'upload' && (
+            <motion.div
+              key="upload"
+              initial={{ opacity: 0, y: 10 }}
+              animate={{ opacity: 1, y: 0 }}
+              exit={{ opacity: 0, y: -10 }}
+              className="space-y-6"
+            >
+              <input
+                ref={fileInputRef}
+                type="file"
+                accept="video/mp4,video/webm,video/quicktime"
+                onChange={handleVideoSelect}
+                className="hidden"
+              />
+
+              {!videoFile && !uploadSuccess && (
+                <button
+                  onClick={() => fileInputRef.current?.click()}
+                  className="w-full h-64 border-2 border-dashed border-purple-500/30 rounded-2xl flex flex-col items-center justify-center gap-4 hover:border-purple-500/50 hover:bg-purple-500/5 transition-all"
+                >
+                  <div className="w-16 h-16 rounded-full bg-purple-500/10 flex items-center justify-center">
+                    <Film className="w-8 h-8 text-purple-400" />
+                  </div>
+                  <div className="text-center">
+                    <p className="text-white font-semibold text-sm">Select a Video</p>
+                    <p className="text-gray-500 text-xs mt-1">MP4, WebM · Max 60 seconds</p>
+                  </div>
+                </button>
+              )}
+
+              {videoFile && videoPreviewUrl && (
+                <div className="space-y-4">
+                  {/* Video preview */}
+                  <div className="relative rounded-2xl overflow-hidden bg-black">
+                    <video
+                      src={videoPreviewUrl}
+                      className="w-full h-64 object-contain"
+                      controls
+                      playsInline
+                    />
+                    <button
+                      onClick={handleRemoveVideo}
+                      className="absolute top-3 right-3 w-8 h-8 rounded-full bg-black/60 flex items-center justify-center"
+                    >
+                      <X className="w-4 h-4 text-white" />
+                    </button>
+                  </div>
+
+                  {/* Caption */}
+                  <div>
+                    <label className="text-xs text-gray-500 uppercase tracking-wider mb-2 block">Caption</label>
+                    <textarea
+                      value={reelCaption}
+                      onChange={(e) => setReelCaption(e.target.value)}
+                      placeholder={`My take on: ${news.title.slice(0, 60)}...`}
+                      maxLength={200}
+                      className="w-full bg-white/5 border border-white/10 rounded-xl px-4 py-3 text-sm text-white placeholder-gray-600 focus:outline-none focus:border-purple-500/50 resize-none"
+                      rows={3}
+                    />
+                    <p className="text-right text-[10px] text-gray-600 mt-1">{reelCaption.length}/200</p>
+                  </div>
+
+                  {/* Linked story */}
+                  <div className="bg-white/5 rounded-xl p-3 flex items-center gap-3">
+                    <Film className="w-4 h-4 text-purple-400 flex-shrink-0" />
+                    <div className="min-w-0">
+                      <p className="text-[10px] text-gray-600 uppercase">Linked to story</p>
+                      <p className="text-xs text-gray-300 truncate">{news.title}</p>
+                    </div>
+                  </div>
+
+                  {/* Upload button */}
+                  <button
+                    onClick={handleUploadReel}
+                    disabled={isUploading}
+                    className="w-full flex items-center justify-center gap-2 py-3.5 rounded-xl bg-gradient-to-r from-purple-500 to-pink-500 text-white font-semibold text-sm shadow-lg shadow-purple-500/20 disabled:opacity-50"
+                  >
+                    {isUploading ? (
+                      <><Loader2 className="w-4 h-4 animate-spin" /> Uploading...</>
+                    ) : (
+                      <><Upload className="w-4 h-4" /> Publish Reel</>
+                    )}
+                  </button>
+                </div>
+              )}
+
+              {uploadSuccess && (
+                <motion.div
+                  initial={{ opacity: 0, scale: 0.9 }}
+                  animate={{ opacity: 1, scale: 1 }}
+                  className="flex flex-col items-center justify-center py-16 gap-4 text-center"
+                >
+                  <div className="w-16 h-16 rounded-full bg-green-500/10 flex items-center justify-center">
+                    <Check className="w-8 h-8 text-green-400" />
+                  </div>
+                  <h3 className="text-white font-bold text-lg">Reel Published!</h3>
+                  <p className="text-gray-400 text-sm">Your reel is now live under this story.</p>
+                  <button
+                    onClick={() => {
+                      setUploadSuccess(false);
+                      fileInputRef.current?.click();
+                    }}
+                    className="mt-2 flex items-center gap-2 px-6 py-3 rounded-full bg-purple-500/20 text-purple-300 font-semibold text-sm border border-purple-500/20"
+                  >
+                    <Upload className="w-4 h-4" />
+                    Upload Another
+                  </button>
+                </motion.div>
+              )}
             </motion.div>
           )}
         </AnimatePresence>

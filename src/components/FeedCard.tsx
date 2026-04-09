@@ -1,8 +1,9 @@
-import { useRef, useEffect } from 'react';
+import { useRef, useEffect, useState } from 'react';
 import { motion } from 'framer-motion';
-import { Bookmark, BookmarkCheck, Share2, ChevronUp, Volume2, VolumeX, Sparkles, Clock, TrendingUp } from 'lucide-react';
+import { Bookmark, BookmarkCheck, Share2, ChevronUp, Volume2, VolumeX, Sparkles, Clock, TrendingUp, Loader2, Film } from 'lucide-react';
 import { useStore } from '../store/useStore';
 import { speakText, stopSpeaking } from '../lib/ttsService';
+import { generateNarrationScript } from '../lib/aiService';
 import type { NewsItem } from '../types';
 import { formatDistanceToNow } from 'date-fns';
 
@@ -13,8 +14,10 @@ interface FeedCardProps {
 }
 
 export default function FeedCard({ news, index, isActive }: FeedCardProps) {
-  const { setSelectedNews, setView, isPlaying, currentAudioId, setPlaying, user, toggleSaved, addToHistory, setCreatorMode } = useStore();
+  const { setSelectedNews, setView, isPlaying, currentAudioId, setPlaying, user, toggleSaved, addToHistory, setCreatorMode, updateNewsItem, loadReelsForNews } = useStore();
+  const reelCount = loadReelsForNews(news.id).length;
   const cardRef = useRef<HTMLDivElement>(null);
+  const [isLoadingAudio, setIsLoadingAudio] = useState(false);
   const isCurrentPlaying = isPlaying && currentAudioId === news.id;
   const isSaved = user?.savedStories.includes(news.id) || false;
 
@@ -31,15 +34,30 @@ export default function FeedCard({ news, index, isActive }: FeedCardProps) {
     }
   }, [isActive]);
 
-  const handlePlayAudio = () => {
+  const handlePlayAudio = async () => {
     if (isCurrentPlaying) {
       stopSpeaking();
       setPlaying(false);
-    } else {
-      const text = news.explanation || news.description;
-      speakText(text, () => setPlaying(false));
-      setPlaying(true, news.id);
+      return;
     }
+
+    // Use cached narration, or generate one
+    let narration = news.narrationScript;
+    if (!narration) {
+      setIsLoadingAudio(true);
+      try {
+        narration = await generateNarrationScript(news);
+        const updated = { ...news, narrationScript: narration };
+        updateNewsItem(updated);
+      } catch {
+        // Fallback to description if AI fails
+        narration = news.explanation || news.description;
+      }
+      setIsLoadingAudio(false);
+    }
+
+    speakText(narration, () => setPlaying(false));
+    setPlaying(true, news.id);
   };
 
   const handleExpand = () => {
@@ -80,6 +98,7 @@ export default function FeedCard({ news, index, isActive }: FeedCardProps) {
           alt=""
           className="w-full h-full object-cover"
           loading="lazy"
+          onError={(e) => { (e.target as HTMLImageElement).src = `/images/category-${news.category}.jpg`; }}
         />
         <div className="absolute inset-0 bg-gradient-to-t from-black via-black/60 to-black/30" />
       </div>
@@ -100,6 +119,12 @@ export default function FeedCard({ news, index, isActive }: FeedCardProps) {
             <TrendingUp className="w-3 h-3" />
             {news.trendScore}%
           </span>
+          {reelCount > 0 && (
+            <span className="flex items-center gap-1 text-xs text-pink-400 font-semibold bg-pink-400/10 px-2 py-1 rounded-full">
+              <Film className="w-3 h-3" />
+              {reelCount} {reelCount === 1 ? 'Reel' : 'Reels'}
+            </span>
+          )}
           <span className="flex items-center gap-1 text-xs text-gray-400">
             <Clock className="w-3 h-3" />
             {formatDistanceToNow(new Date(news.publishedAt), { addSuffix: true })}
@@ -148,13 +173,18 @@ export default function FeedCard({ news, index, isActive }: FeedCardProps) {
         >
           <button
             onClick={handlePlayAudio}
+            disabled={isLoadingAudio}
             className={`flex items-center gap-2 px-5 py-2.5 rounded-full font-semibold text-sm transition-all ${
               isCurrentPlaying
                 ? 'bg-indigo-500 text-white shadow-lg shadow-indigo-500/30'
+                : isLoadingAudio
+                ? 'bg-white/10 text-white/50'
                 : 'bg-white/15 text-white backdrop-blur-sm hover:bg-white/25'
             }`}
           >
-            {isCurrentPlaying ? (
+            {isLoadingAudio ? (
+              <><Loader2 className="w-4 h-4 animate-spin" /> Loading...</>    
+            ) : isCurrentPlaying ? (
               <><VolumeX className="w-4 h-4" /> Stop</>    
             ) : (
               <><Volume2 className="w-4 h-4" /> Listen</>    

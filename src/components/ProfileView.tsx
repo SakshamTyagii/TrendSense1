@@ -1,17 +1,20 @@
 import { motion } from 'framer-motion';
-import { ArrowLeft, LogOut, Moon, Volume2, Bell, Shield, ChevronRight, Bookmark, Clock, Sparkles } from 'lucide-react';
+import { ArrowLeft, LogOut, Moon, Volume2, Bell, Shield, ChevronRight, Bookmark, Clock, Sparkles, Film, Play } from 'lucide-react';
 import { useStore } from '../store/useStore';
 import { CATEGORIES } from '../types';
 
 export default function ProfileView() {
-  const { user, logout, setView } = useStore();
+  const { user, logout, setView, reels } = useStore();
 
   if (!user) return null;
+
+  const myReels = reels.filter(r => r.creatorId === user.id);
 
   const menuItems = [
     { icon: Bookmark, label: 'Saved Stories', count: user.savedStories.length, color: 'text-indigo-400' },
     { icon: Clock, label: 'History', count: user.history.length, color: 'text-blue-400' },
     { icon: Sparkles, label: 'My Scripts', count: 0, color: 'text-purple-400' },
+    { icon: Film, label: 'My Reels', count: myReels.length, color: 'text-pink-400' },
   ];
 
   const settingsItems = [
@@ -59,7 +62,7 @@ export default function ProfileView() {
         </div>
 
         {/* Stats */}
-        <div className="grid grid-cols-3 gap-3 mb-8">
+        <div className="grid grid-cols-4 gap-3 mb-8">
           {menuItems.map(item => (
             <div key={item.label} className="bg-white/5 rounded-2xl p-4 text-center">
               <item.icon className={`w-5 h-5 mx-auto mb-2 ${item.color}`} />
@@ -68,6 +71,27 @@ export default function ProfileView() {
             </div>
           ))}
         </div>
+
+        {/* My Reels */}
+        {myReels.length > 0 && (
+          <div className="mb-8">
+            <h3 className="text-xs text-gray-600 uppercase tracking-wider mb-3">My Reels</h3>
+            <div className="grid grid-cols-3 gap-2">
+              {myReels.map(reel => (
+                <div key={reel.id} className="relative aspect-[9/16] rounded-xl overflow-hidden bg-white/5">
+                  <img src={reel.thumbnailUrl} alt="" className="w-full h-full object-cover" />
+                  <div className="absolute inset-0 bg-black/30 flex items-center justify-center">
+                    <Play className="w-6 h-6 text-white/80" fill="white" />
+                  </div>
+                  <div className="absolute bottom-1 left-1 right-1">
+                    <p className="text-[9px] text-white/80 truncate">{reel.caption}</p>
+                    <p className="text-[8px] text-gray-400">{reel.views} views</p>
+                  </div>
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
 
         {/* Preferred categories */}
         <div className="mb-8">
