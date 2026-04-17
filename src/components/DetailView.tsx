@@ -96,7 +96,7 @@ export default function DetailView() {
     >
       {/* Hero */}
       <div className="relative h-72 sm:h-80">
-        <img src={news.imageUrl} alt="" className="w-full h-full object-cover" onError={(e) => { (e.target as HTMLImageElement).src = `/images/category-${news.category}.jpg`; }} />
+        <img src={news.imageUrl} alt={news.title} className="w-full h-full object-cover" onError={(e) => { (e.target as HTMLImageElement).src = `/images/category-${news.category}.jpg`; }} />
         <div className="absolute inset-0 bg-gradient-to-t from-[#0a0a0f] via-[#0a0a0f]/60 to-transparent" />
         
         {/* Top bar */}

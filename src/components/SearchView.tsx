@@ -99,7 +99,7 @@ export default function SearchView() {
                 >
                   <img
                     src={news.imageUrl}
-                    alt=""
+                    alt={news.title}
                     className="w-16 h-16 rounded-lg object-cover flex-shrink-0"
                   />
                   <div className="flex-1 min-w-0">
@@ -145,7 +145,7 @@ export default function SearchView() {
                     onClick={() => handleCategoryClick(cat.id)}
                     className="relative overflow-hidden rounded-2xl h-28 group"
                   >
-                    <img src={cat.image} alt="" className="w-full h-full object-cover group-hover:scale-110 transition-transform duration-500" />
+                    <img src={cat.image} alt={cat.label} className="w-full h-full object-cover group-hover:scale-110 transition-transform duration-500" />
                     <div className="absolute inset-0 bg-black/50 group-hover:bg-black/40 transition-colors" />
                     <span className="absolute bottom-3 left-3 text-white font-bold text-sm">{cat.label}</span>
                   </button>

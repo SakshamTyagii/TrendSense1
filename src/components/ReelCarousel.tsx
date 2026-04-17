@@ -74,7 +74,7 @@ export default function ReelCarousel({ newsId }: ReelCarouselProps) {
                 {reel.thumbnailUrl ? (
                   <img
                     src={reel.thumbnailUrl}
-                    alt=""
+                    alt={reel.caption}
                     className="w-full h-full object-cover"
                   />
                 ) : (
@@ -102,7 +102,7 @@ export default function ReelCarousel({ newsId }: ReelCarouselProps) {
               <div className="flex items-center gap-1.5">
                 <img
                   src={reel.creatorAvatar}
-                  alt=""
+                  alt={`${reel.creatorName} avatar`}
                   className="w-5 h-5 rounded-full bg-white/10"
                 />
                 <span className="text-xs text-gray-400 truncate">{reel.creatorName}</span>

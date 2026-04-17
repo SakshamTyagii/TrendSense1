@@ -95,7 +95,7 @@ export default function FeedCard({ news, index, isActive }: FeedCardProps) {
       <div className="absolute inset-0">
         <img
           src={news.imageUrl}
-          alt=""
+          alt={news.title}
           className="w-full h-full object-cover"
           loading="lazy"
           onError={(e) => { (e.target as HTMLImageElement).src = `/images/category-${news.category}.jpg`; }}

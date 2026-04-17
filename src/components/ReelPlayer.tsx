@@ -87,7 +87,7 @@ export default function ReelPlayer({ reel: initialReel, allReels, onClose }: Ree
         <div className="flex items-center gap-3 mb-3">
           <img
             src={currentReel.creatorAvatar}
-            alt=""
+            alt={`${currentReel.creatorName} avatar`}
             className="w-10 h-10 rounded-full bg-white/10 border-2 border-purple-500"
           />
           <div>

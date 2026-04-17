@@ -79,7 +79,7 @@ export default function ProfileView() {
             <div className="grid grid-cols-3 gap-2">
               {myReels.map(reel => (
                 <div key={reel.id} className="relative aspect-[9/16] rounded-xl overflow-hidden bg-white/5">
-                  <img src={reel.thumbnailUrl} alt="" className="w-full h-full object-cover" />
+                  <img src={reel.thumbnailUrl} alt={reel.caption} className="w-full h-full object-cover" />
                   <div className="absolute inset-0 bg-black/30 flex items-center justify-center">
                     <Play className="w-6 h-6 text-white/80" fill="white" />
                   </div>
