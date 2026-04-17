@@ -5,7 +5,7 @@ const CACHE_PREFIX = 'ts_ai_';
 const TTL_MS = 24 * 60 * 60 * 1000; // 24 hours
 const MAX_ENTRIES = 200;
 
-type CacheType = 'explanation' | 'narration' | 'script' | 'insights';
+type CacheType = 'explanation' | 'narration' | 'script' | 'insights' | 'trendAnalysis';
 
 interface CacheEntry<T> {
   data: T;

@@ -166,7 +166,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     return res.status(400).json({ error: 'Missing type or prompt in request body' });
   }
 
-  const validTypes = ['explanation', 'script', 'narration', 'insights'];
+  const validTypes = ['explanation', 'script', 'narration', 'insights', 'trendAnalysis'];
   if (!validTypes.includes(type)) {
     return res.status(400).json({ error: `Invalid type. Must be one of: ${validTypes.join(', ')}` });
   }

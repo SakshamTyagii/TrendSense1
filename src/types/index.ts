@@ -2,9 +2,10 @@ export interface NewsItem {
   id: string;
   title: string;
   description: string;
-  explanation: string;
-  whyTrending: string;
-  whyMatters: string;
+  explanation?: string;
+  whyTrending?: string;
+  whyMatters?: string;
+  trendAnalysis?: TrendAnalysis;
   narrationScript?: string;
   category: Category;
   source: string;
@@ -72,6 +73,22 @@ export interface CreatorScript {
   thumbnailIdea: string;
   imagePrompt: string;
   createdAt: string;
+}
+
+export interface VideoScript {
+  hook: string;
+  context: string;
+  explanation: string;
+  payoff: string;
+  cta: string;
+}
+
+export interface TrendAnalysis {
+  whatsGoingOn: string;
+  whyBlowingUp: string;
+  creatorOpportunity: string;
+  viralHooks: string[];
+  videoScript: VideoScript;
 }
 
 export interface CreatorInsight {

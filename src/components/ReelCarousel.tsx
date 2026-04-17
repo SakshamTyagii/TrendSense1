@@ -22,13 +22,10 @@ export default function ReelCarousel({ newsId }: ReelCarouselProps) {
 
   if (newsReels.length === 0) {
     return (
-      <section className="bg-purple-500/5 border border-purple-500/10 rounded-2xl p-5">
-        <div className="flex items-center gap-2 mb-3">
-          <Sparkles className="w-5 h-5 text-purple-400" />
-          <h3 className="text-lg font-bold text-purple-400">Creator Reels</h3>
-        </div>
-        <p className="text-gray-400 text-sm mb-4">
-          No reels yet for this story. Be the first creator to make one!
+      <section className="bg-gradient-to-r from-purple-500/5 to-pink-500/5 border border-purple-500/15 rounded-2xl p-5">
+        <h3 className="text-sm font-bold text-purple-400 mb-2">🚀 Be the first to go viral on this</h3>
+        <p className="text-gray-500 text-xs mb-4">
+          No one has made a reel on this story yet. This is your chance to be first.
         </p>
         <button
           onClick={handleCreateReel}

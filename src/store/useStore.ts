@@ -52,6 +52,8 @@ interface AppState {
   setView: (view: AppState['currentView']) => void;
   showCreatorMode: boolean;
   setCreatorMode: (show: boolean) => void;
+  prefilledHook: string | null;
+  setPrefilledHook: (hook: string | null) => void;
   
   // User behavior
   addToHistory: (newsId: string) => void;
@@ -227,8 +229,9 @@ export const useStore = create<AppState>((set, get) => ({
       // Preserve AI enrichments from old items by matching on URL
       const enrichMap = new Map<string, Partial<NewsItem>>();
       for (const n of oldNews) {
-        if (n.sourceUrl && (n.explanation || n.narrationScript)) {
+        if (n.sourceUrl && (n.trendAnalysis || n.explanation || n.narrationScript)) {
           enrichMap.set(n.sourceUrl, {
+            trendAnalysis: n.trendAnalysis,
             explanation: n.explanation,
             whyTrending: n.whyTrending,
             whyMatters: n.whyMatters,
@@ -311,6 +314,8 @@ export const useStore = create<AppState>((set, get) => ({
   setView: (view) => set({ currentView: view }),
   showCreatorMode: false,
   setCreatorMode: (show) => set({ showCreatorMode: show }),
+  prefilledHook: null,
+  setPrefilledHook: (hook) => set({ prefilledHook: hook }),
   
   // User behavior
   addToHistory: (newsId) => {

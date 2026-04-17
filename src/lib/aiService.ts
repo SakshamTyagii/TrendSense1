@@ -1,6 +1,6 @@
 import { getCached, setCache } from './aiCache';
 import { apiFetch } from './apiFetch';
-import type { NewsItem, CreatorScript, CreatorInsight } from '../types';
+import type { NewsItem, CreatorScript, TrendAnalysis } from '../types';
 
 // ─── AI call with dev fallback ─────────────────────────────────────────
 // Production: calls /api/ai proxy (keys on server)
@@ -202,46 +202,61 @@ function cleanValue(val: unknown): string {
     .trim();
 }
 
-export async function generateExplanation(news: NewsItem): Promise<{
-  explanation: string;
-  whyTrending: string;
-  whyMatters: string;
-}> {
-  if (news.explanation) {
-    return {
-      explanation: news.explanation,
-      whyTrending: news.whyTrending,
-      whyMatters: news.whyMatters,
-    };
+export async function generateTrendAnalysis(news: NewsItem): Promise<TrendAnalysis> {
+  if (news.trendAnalysis) {
+    return news.trendAnalysis;
   }
 
   // Check localStorage cache by article URL
   const cacheKey = news.sourceUrl || news.title;
-  const cached = getCached<{ explanation: string; whyTrending: string; whyMatters: string }>('explanation', cacheKey);
+  const cached = getCached<TrendAnalysis>('trendAnalysis', cacheKey);
   if (cached) return cached;
 
-  const prompt = `Analyze this news article. Respond ONLY with a valid JSON object, no markdown, no extra text.
+  const prompt = `You are an expert news analyst, trend strategist, and viral content creator. Your job is NOT to summarize news. Your job is to decode what is ACTUALLY happening, explain WHY this is trending with real reasoning, extract creator opportunities, and generate viral-ready content.
 
+INPUT:
 Headline: ${news.title}
 Description: ${news.description}
 Source: ${news.source}
 
-Rules:
-- Each value must be 40-80 words MAX. Be concise.
-- No markdown headers, no bullet points, no labels inside values.
-- Plain conversational text only.
-- Output MUST be parseable JSON.
+Respond ONLY with a valid JSON object, no markdown, no extra text. Output MUST be parseable JSON.
 
-{"explanation": "2-3 sentence summary of what happened, who is involved, and key facts.", "whyTrending": "2-3 sentences on why this is getting attention right now.", "whyMatters": "2-3 sentences on real-world impact for everyday people."}`;
+STRICT RULES for content:
+- DO NOT summarize like a news article
+- DO NOT repeat the headline
+- DO NOT be generic — every insight must be specific to THIS topic
+- DO NOT use filler phrases or obvious explanations
+- If an explanation could apply to ANY topic, make it more specific
+- Hooks must feel scroll-stopping, no generic "What if..." phrases
+- Video script must be natural, conversational, fast-paced (30-45 seconds when spoken)
 
-  const result = await callAI('explanation', prompt);
+JSON format:
+{"whatsGoingOn": "2-3 sentences max. Explain the situation like a human. Avoid robotic/news tone. Focus on clarity and context. No markdown.", "whyBlowingUp": "2-4 sentences. Identify the REAL trigger, not generic reasons. Explain timing — why NOW. Explain human psychology — curiosity, confusion, controversy, etc. Must be specific to this topic.", "creatorOpportunity": "2-3 sentences. Why this topic is perfect for short-form content. What makes it engaging — visual, relatable, controversial, etc. What angle will perform best.", "viralHooks": ["hook 1 — scroll-stopping, curiosity or bold claim", "hook 2 — urgency or controversy angle", "hook 3 — surprising or contrarian take"], "videoScript": {"hook": "strong opening line that stops the scroll", "context": "quick setup, relatable, 1-2 sentences", "explanation": "main insight, simple and engaging, 2-3 sentences", "payoff": "why this matters, the takeaway, 1-2 sentences", "cta": "engaging closing line that drives interaction"}}`;
+
+  const result = await callAI('trendAnalysis', prompt, 1200);
   const parsed = parseAIJson<any>(result);
-  const data = {
-    explanation: cleanValue(parsed.explanation),
-    whyTrending: cleanValue(parsed.whyTrending),
-    whyMatters: cleanValue(parsed.whyMatters),
+  
+  const hooks = Array.isArray(parsed.viralHooks) 
+    ? parsed.viralHooks.slice(0, 3).map((h: any) => cleanValue(h))
+    : ['', '', ''];
+  // Ensure exactly 3 hooks
+  while (hooks.length < 3) hooks.push('');
+
+  const vs = parsed.videoScript || {};
+  const data: TrendAnalysis = {
+    whatsGoingOn: cleanValue(parsed.whatsGoingOn),
+    whyBlowingUp: cleanValue(parsed.whyBlowingUp),
+    creatorOpportunity: cleanValue(parsed.creatorOpportunity),
+    viralHooks: hooks,
+    videoScript: {
+      hook: cleanValue(vs.hook),
+      context: cleanValue(vs.context),
+      explanation: cleanValue(vs.explanation),
+      payoff: cleanValue(vs.payoff),
+      cta: cleanValue(vs.cta),
+    },
   };
-  setCache('explanation', cacheKey, data);
+  setCache('trendAnalysis', cacheKey, data);
   return data;
 }
 
@@ -266,7 +281,7 @@ export async function generateCreatorScript(
   const prompt = `Create a highly engaging ${fg.style} script (${fg.duration}) on this topic. Respond ONLY with valid JSON, no markdown.
 
 Topic: ${news.title}
-Context: ${news.explanation || news.description}
+Context: ${news.trendAnalysis?.whatsGoingOn || news.explanation || news.description}
 
 Script structure:
 1. Strong hook (curiosity, "what if", or psychology-based opener) — 1-2 sentences
@@ -305,27 +320,6 @@ JSON format:
   return script;
 }
 
-export async function generateCreatorInsights(news: NewsItem): Promise<CreatorInsight> {
-  const cacheKey = news.sourceUrl || news.title;
-  const cached = getCached<CreatorInsight>('insights', cacheKey);
-  if (cached) return cached;
-
-  const prompt = `Analyze this news story for creator content potential. Respond ONLY with a valid JSON object, no markdown.
-
-Headline: ${news.title}
-Description: ${news.description}
-Category: ${news.category}
-
-Rules: Keep string values under 40 words each. No markdown, no headers inside values.
-
-{"viralReason": "2 sentences on viral potential", "bestAngle": "2 sentences on best creator angle", "targetAudience": "One sentence on target demographics", "suggestedHashtags": ["7 hashtags"], "engagementTips": ["5 short tips, one sentence each"]}`;
-
-  const result = await callAI('insights', prompt);
-  const data = parseAIJson<CreatorInsight>(result);
-  setCache('insights', cacheKey, data);
-  return data;
-}
-
 export async function generateNarrationScript(news: NewsItem): Promise<string> {
   const cacheKey = news.sourceUrl || news.title;
   const cached = getCached<string>('narration', cacheKey);
@@ -335,7 +329,7 @@ export async function generateNarrationScript(news: NewsItem): Promise<string> {
 
 Headline: ${news.title}
 Description: ${news.description}
-${news.explanation ? `Context: ${news.explanation}` : ''}
+${(news.trendAnalysis?.whatsGoingOn || news.explanation) ? `Context: ${news.trendAnalysis?.whatsGoingOn || news.explanation}` : ''}
 
 Rules:
 - Write ONLY the narration text, no labels, no stage directions

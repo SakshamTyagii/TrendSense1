@@ -60,7 +60,7 @@ export default function FeedCard({ news, index, isActive }: FeedCardProps) {
         if (user) await trackUsageWithServer(user.id, 'narrations');
       } catch {
         // Fallback to description if AI fails
-        narration = news.explanation || news.description;
+        narration = news.trendAnalysis?.whatsGoingOn || news.explanation || news.description;
       }
       setIsLoadingAudio(false);
     }
@@ -178,7 +178,7 @@ export default function FeedCard({ news, index, isActive }: FeedCardProps) {
           transition={{ delay: 0.5 }}
         >
           <p className="text-gray-300 text-sm leading-relaxed line-clamp-3 max-w-lg mb-4">
-            {news.explanation ? news.explanation.slice(0, 200) + '...' : news.description}
+            {(news.trendAnalysis?.whatsGoingOn || news.explanation) ? (news.trendAnalysis?.whatsGoingOn || news.explanation || '').slice(0, 200) + '...' : news.description}
           </p>
         </motion.div>
 
