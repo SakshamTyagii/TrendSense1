@@ -3,7 +3,7 @@ import { Newspaper, Search, Sparkles, User } from 'lucide-react';
 import { useStore } from '../store/useStore';
 
 export default function BottomNav() {
-  const { currentView, setView, selectedNews, setCreatorMode } = useStore();
+  const { currentView, setView, setCreatorMode } = useStore();
 
   const items = [
     { id: 'feed' as const, icon: Newspaper, label: 'Feed' },
@@ -14,12 +14,8 @@ export default function BottomNav() {
 
   const handleNav = (id: typeof items[number]['id']) => {
     if (id === 'creator') {
-      if (selectedNews) {
-        setCreatorMode(true);
-        setView('creator');
-      } else {
-        setView('feed');
-      }
+      setCreatorMode(true);
+      setView('creator');
     } else {
       setView(id);
     }

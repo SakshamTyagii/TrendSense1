@@ -41,7 +41,8 @@ export default function SearchView() {
     setView('feed');
   };
 
-  const trendingSearches = ['AI regulation', 'Climate summit', 'Stock market rally', 'Space exploration', 'Crypto ETF'];
+  // Category-based search suggestions (not hardcoded trending topics)
+  const suggestedSearches = ['Technology', 'Sports news', 'Finance today', 'Entertainment', 'World politics'];
 
   return (
     <motion.div
@@ -120,10 +121,10 @@ export default function SearchView() {
             {/* Trending searches */}
             <div className="mb-8">
               <h3 className="text-xs text-gray-600 uppercase tracking-wider mb-3 flex items-center gap-2">
-                <TrendingUp className="w-3 h-3" /> Trending Searches
+                <TrendingUp className="w-3 h-3" /> Suggested Searches
               </h3>
               <div className="flex flex-wrap gap-2">
-                {trendingSearches.map(term => (
+                {suggestedSearches.map(term => (
                   <button
                     key={term}
                     onClick={() => handleSearch(term)}

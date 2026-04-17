@@ -22,9 +22,14 @@ function LoadingFallback() {
 }
 
 export default function App() {
-  const { isAuthenticated, currentView, setView } = useStore();
+  const { isAuthenticated, isAuthLoading, currentView, setView, initAuth } = useStore();
   const navigate = useNavigate();
   const location = useLocation();
+
+  // Initialize Supabase auth on mount (checks session, listens for changes)
+  useEffect(() => {
+    initAuth();
+  }, []);
 
   // Sync Zustand currentView → URL
   useEffect(() => {
@@ -60,6 +65,11 @@ export default function App() {
   // Public route: login
   if (!isAuthenticated && location.pathname !== '/login') {
     // Allow the feed to be visible to crawlers (public content)
+  }
+
+  // Show loading while Supabase checks the session (avoids login flash)
+  if (isAuthLoading) {
+    return <LoadingFallback />;
   }
 
   return (

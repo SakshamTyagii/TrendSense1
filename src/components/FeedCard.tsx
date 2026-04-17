@@ -4,6 +4,8 @@ import { Bookmark, BookmarkCheck, Share2, ChevronUp, Volume2, VolumeX, Sparkles,
 import { useStore } from '../store/useStore';
 import { speakText, stopSpeaking } from '../lib/ttsService';
 import { generateNarrationScript } from '../lib/aiService';
+import { canUseFeature, trackUsageWithServer } from '../lib/subscription';
+import ProGate from './ProGate';
 import type { NewsItem } from '../types';
 import { formatDistanceToNow } from 'date-fns';
 
@@ -18,6 +20,7 @@ export default function FeedCard({ news, index, isActive }: FeedCardProps) {
   const reelCount = loadReelsForNews(news.id).length;
   const cardRef = useRef<HTMLDivElement>(null);
   const [isLoadingAudio, setIsLoadingAudio] = useState(false);
+  const [showProGate, setShowProGate] = useState<{ feature: string; used: number; limit: number } | null>(null);
   const isCurrentPlaying = isPlaying && currentAudioId === news.id;
   const isSaved = user?.savedStories.includes(news.id) || false;
 
@@ -44,11 +47,17 @@ export default function FeedCard({ news, index, isActive }: FeedCardProps) {
     // Use cached narration, or generate one
     let narration = news.narrationScript;
     if (!narration) {
+      const check = canUseFeature('narrations');
+      if (!check.allowed) {
+        setShowProGate({ feature: 'audio narrations', used: check.used, limit: check.limit });
+        return;
+      }
       setIsLoadingAudio(true);
       try {
         narration = await generateNarrationScript(news);
         const updated = { ...news, narrationScript: narration };
         updateNewsItem(updated);
+        if (user) await trackUsageWithServer(user.id, 'narrations');
       } catch {
         // Fallback to description if AI fails
         narration = news.explanation || news.description;
@@ -87,6 +96,15 @@ export default function FeedCard({ news, index, isActive }: FeedCardProps) {
   };
 
   return (
+    <>
+    {showProGate && (
+      <ProGate
+        feature={showProGate.feature}
+        used={showProGate.used}
+        limit={showProGate.limit}
+        onClose={() => setShowProGate(null)}
+      />
+    )}
     <div
       ref={cardRef}
       className="relative w-full h-screen snap-start snap-always flex-shrink-0"
@@ -249,5 +267,6 @@ export default function FeedCard({ news, index, isActive }: FeedCardProps) {
         </motion.div>
       )}
     </div>
+    </>
   );
 }

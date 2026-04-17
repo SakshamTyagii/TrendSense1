@@ -1,21 +1,20 @@
+// ─── Client-side configuration ─────────────────────────────────────────
+// API keys are NO LONGER stored client-side. All API calls go through /api/* proxy.
+// Only Supabase public keys remain here (they are designed to be public).
+
 export const config = {
-  newsApiKey: import.meta.env.VITE_NEWS_API_KEY || '',
-  groqApiKey: import.meta.env.VITE_GROQ_API_KEY || '',
-  geminiApiKey: import.meta.env.VITE_GEMINI_API_KEY || '',
-  cerebrasApiKey: import.meta.env.VITE_CEREBRAS_API_KEY || '',
-  openrouterApiKey: import.meta.env.VITE_OPENROUTER_API_KEY || '',
+  // Supabase (public anon key — safe for client-side)
+  supabaseUrl: import.meta.env.VITE_SUPABASE_URL || '',
+  supabaseAnonKey: import.meta.env.VITE_SUPABASE_ANON_KEY || '',
+
+  // OAuth client IDs (public — used in browser redirect)
   googleClientId: import.meta.env.VITE_GOOGLE_CLIENT_ID || '',
-  youtubeApiKey: import.meta.env.VITE_YOUTUBE_API_KEY || '',
-  elevenLabsApiKey: import.meta.env.VITE_ELEVENLABS_API_KEY || '',
   twitterClientId: import.meta.env.VITE_TWITTER_CLIENT_ID || '',
-  
-  get hasNewsApi() { return this.newsApiKey.length > 0; },
-  get hasGroq() { return this.groqApiKey.length > 0; },
-  get hasGemini() { return this.geminiApiKey.length > 0; },
-  get hasCerebras() { return this.cerebrasApiKey.length > 0; },
-  get hasOpenRouter() { return this.openrouterApiKey.length > 0; },
-  get hasAI() { return this.hasGroq || this.hasCerebras || this.hasGemini || this.hasOpenRouter; },
+
+  // Stripe publishable key (public — for Stripe.js)
+  stripePublishableKey: import.meta.env.VITE_STRIPE_PUBLISHABLE_KEY || '',
+
+  get hasSupabase() { return this.supabaseUrl.length > 0 && this.supabaseAnonKey.length > 0; },
   get hasGoogleAuth() { return this.googleClientId.length > 0; },
-  get hasYoutubeApi() { return this.youtubeApiKey.length > 0; },
-  get hasElevenLabs() { return this.elevenLabsApiKey.length > 0; },
+  get hasStripe() { return this.stripePublishableKey.length > 0; },
 };

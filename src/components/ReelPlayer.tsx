@@ -39,7 +39,9 @@ export default function ReelPlayer({ reel: initialReel, allReels, onClose }: Ree
 
   const handleShare = async () => {
     if (navigator.share) {
-      await navigator.share({ title: currentReel.caption, text: `Check out this reel on TrendSense` });
+      try {
+        await navigator.share({ title: currentReel.caption, text: `Check out this reel on TrendSense` });
+      } catch { /* user cancelled */ }
     }
   };
 

@@ -134,12 +134,12 @@ export default function HomeFeed() {
       </AnimatePresence>
 
       {filteredNews.map((news, index) => (
-        <FeedCard
-          key={news.id}
-          news={news}
-          index={index}
-          isActive={index === activeIndex}
-        />
+          <FeedCard
+            key={news.id}
+            news={news}
+            index={index}
+            isActive={index === activeIndex}
+          />
       ))}
     </div>
   );

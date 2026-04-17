@@ -1,161 +1,205 @@
-import { config } from './config';
 import { getCached, setCache } from './aiCache';
+import { apiFetch } from './apiFetch';
 import type { NewsItem, CreatorScript, CreatorInsight } from '../types';
 
-// ─── Provider cooldown tracking ────────────────────────────────────────
-// When a provider returns 429, skip it for 15 minutes
-const COOLDOWN_MS = 15 * 60 * 1000;
-const cooldowns: Record<string, number> = {};
+// ─── AI call with dev fallback ─────────────────────────────────────────
+// Production: calls /api/ai proxy (keys on server)
+// Dev: calls AI providers directly using VITE_ keys from .env
 
-function isOnCooldown(provider: string): boolean {
-  const until = cooldowns[provider];
-  if (!until) return false;
-  if (Date.now() >= until) { delete cooldowns[provider]; return false; }
-  return true;
-}
+const isDev = import.meta.env.DEV;
 
-function setCooldown(provider: string): void {
-  cooldowns[provider] = Date.now() + COOLDOWN_MS;
-}
+const AI_PROVIDERS = [
+  {
+    name: 'groq',
+    url: 'https://api.groq.com/openai/v1/chat/completions',
+    key: import.meta.env.VITE_GROQ_API_KEY || '',
+    model: 'llama-3.3-70b-versatile',
+  },
+  {
+    name: 'cerebras',
+    url: 'https://api.cerebras.ai/v1/chat/completions',
+    key: import.meta.env.VITE_CEREBRAS_API_KEY || '',
+    model: 'llama-3.3-70b',
+  },
+  {
+    name: 'gemini',
+    url: 'https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent',
+    key: import.meta.env.VITE_GEMINI_API_KEY || '',
+    model: '',
+  },
+  {
+    name: 'openrouter',
+    url: 'https://openrouter.ai/api/v1/chat/completions',
+    key: import.meta.env.VITE_OPENROUTER_API_KEY || '',
+    model: 'meta-llama/llama-3.3-70b-instruct:free',
+  },
+];
 
-function is429(err: any): boolean {
-  return err?.message?.includes('429') || false;
-}
-
-function cleanJson(raw: string): string {
-  return raw.replace(/^```(?:json)?\s*\n?/i, '').replace(/\n?```\s*$/i, '').trim();
-}
-
-// ─── Provider: Groq (Llama 3.3 70B) ───────────────────────────────────
-async function callGroq(prompt: string): Promise<string> {
-  const response = await fetch('https://api.groq.com/openai/v1/chat/completions', {
-    method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-      'Authorization': `Bearer ${config.groqApiKey}`,
-    },
-    body: JSON.stringify({
-      model: 'llama-3.3-70b-versatile',
-      messages: [{ role: 'user', content: prompt }],
-      temperature: 0.7,
-      response_format: { type: 'json_object' },
-    }),
-  });
-
-  if (!response.ok) {
-    const err = await response.text();
-    throw new Error(`Groq API error (${response.status}): ${err}`);
-  }
-
-  const data = await response.json();
-  return data.choices?.[0]?.message?.content || '';
-}
-
-// ─── Provider: Cerebras (gpt-oss-120b) ────────────────────────────────
-async function callCerebras(prompt: string): Promise<string> {
-  const response = await fetch('https://api.cerebras.ai/v1/chat/completions', {
-    method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-      'Authorization': `Bearer ${config.cerebrasApiKey}`,
-    },
-    body: JSON.stringify({
-      model: 'llama3.1-8b',
-      messages: [{ role: 'user', content: prompt }],
-      temperature: 0.7,
-      response_format: { type: 'json_object' },
-    }),
-  });
-
-  if (!response.ok) {
-    const err = await response.text();
-    throw new Error(`Cerebras API error (${response.status}): ${err}`);
-  }
-
-  const data = await response.json();
-  return data.choices?.[0]?.message?.content || '';
-}
-
-// ─── Provider: Gemini (2.0 Flash) ──────────────────────────────────────
-async function callGemini(prompt: string): Promise<string> {
-  const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=${config.geminiApiKey}`;
-
-  const response = await fetch(url, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({
-      contents: [{ parts: [{ text: prompt }] }],
-      generationConfig: {
-        temperature: 0.7,
-        responseMimeType: 'application/json',
-      },
-    }),
-  });
-
-  if (!response.ok) {
-    const err = await response.text();
-    throw new Error(`Gemini API error (${response.status}): ${err}`);
-  }
-
-  const data = await response.json();
-  return data.candidates?.[0]?.content?.parts?.[0]?.text || '';
-}
-
-// ─── Provider: OpenRouter (free models) ────────────────────────────────
-async function callOpenRouter(prompt: string): Promise<string> {
-  const response = await fetch('https://openrouter.ai/api/v1/chat/completions', {
-    method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-      'Authorization': `Bearer ${config.openrouterApiKey}`,
-      'HTTP-Referer': window.location.origin,
-      'X-Title': 'TrendSense',
-    },
-    body: JSON.stringify({
-      model: 'nvidia/nemotron-3-super-120b-a12b:free',
-      messages: [{ role: 'user', content: prompt }],
-      temperature: 0.7,
-      response_format: { type: 'json_object' },
-    }),
-  });
-
-  if (!response.ok) {
-    const err = await response.text();
-    throw new Error(`OpenRouter API error (${response.status}): ${err}`);
-  }
-
-  const data = await response.json();
-  return data.choices?.[0]?.message?.content || '';
-}
-
-// ─── Unified caller: Groq → Cerebras → Gemini → OpenRouter ────────────
-async function callAI(prompt: string): Promise<string> {
-  if (!config.hasAI) {
-    throw new Error('No AI API key configured. Add at least one of: VITE_GROQ_API_KEY, VITE_CEREBRAS_API_KEY, VITE_GEMINI_API_KEY, or VITE_OPENROUTER_API_KEY to your .env file.');
-  }
-
-  const providers: { name: string; hasKey: boolean; fn: (p: string) => Promise<string> }[] = [
-    { name: 'groq', hasKey: config.hasGroq, fn: callGroq },
-    { name: 'cerebras', hasKey: config.hasCerebras, fn: callCerebras },
-    { name: 'gemini', hasKey: config.hasGemini, fn: callGemini },
-    { name: 'openrouter', hasKey: config.hasOpenRouter, fn: callOpenRouter },
-  ];
-
-  const errors: string[] = [];
-
-  for (const { name, hasKey, fn } of providers) {
-    if (!hasKey || isOnCooldown(name)) continue;
+async function callAIDirect(prompt: string, maxTokens = 800): Promise<string> {
+  for (const provider of AI_PROVIDERS) {
+    if (!provider.key) continue;
     try {
-      const result = await fn(prompt);
-      if (result) return cleanJson(result);
-    } catch (err: any) {
-      console.warn(`${name} failed, trying next provider:`, err.message);
-      if (is429(err)) setCooldown(name);
-      errors.push(err.message);
+      if (provider.name === 'gemini') {
+        const response = await fetch(`${provider.url}?key=${provider.key}`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            contents: [{ parts: [{ text: prompt }] }],
+            generationConfig: { temperature: 0.7, maxOutputTokens: maxTokens },
+          }),
+        });
+        if (!response.ok) continue;
+        const data = await response.json();
+        return data.candidates?.[0]?.content?.parts?.[0]?.text || '';
+      }
+
+      const response = await fetch(provider.url, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${provider.key}`,
+        },
+        body: JSON.stringify({
+          model: provider.model,
+          messages: [{ role: 'user', content: prompt }],
+          temperature: 0.7,
+          max_tokens: maxTokens,
+        }),
+      });
+      if (!response.ok) continue;
+      const data = await response.json();
+      return data.choices?.[0]?.message?.content || '';
+    } catch {
+      continue;
     }
   }
+  throw new Error('All AI providers failed');
+}
 
-  throw new Error(`All AI providers failed:\n${errors.join('\n')}`);
+async function callAI(type: string, prompt: string, maxTokens = 800): Promise<string> {
+  if (isDev) {
+    return callAIDirect(prompt, maxTokens);
+  }
+
+  const response = await apiFetch('/api/ai', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ type, prompt }),
+  });
+
+  if (!response.ok) {
+    const err = await response.json().catch(() => ({ error: 'AI generation failed' }));
+    throw new Error(err.error || `AI error (${response.status})`);
+  }
+
+  const data = await response.json();
+  return data.result || '';
+}
+
+/**
+ * Bulletproof AI JSON parser — handles every known AI output quirk:
+ * - Markdown code fences (```json ... ```)
+ * - Literal newlines/tabs/control chars inside string values
+ * - Unescaped double quotes inside string values
+ * - Trailing commas
+ * - Text before/after the JSON object
+ * Falls back to regex key extraction if JSON.parse still fails.
+ */
+function parseAIJson<T>(raw: string): T {
+  let text = raw.trim();
+
+  // Strip markdown code fences
+  text = text.replace(/^```(?:json)?\s*\n?/i, '').replace(/\n?\s*```\s*$/i, '');
+
+  // Extract JSON object (first { to last })
+  const objStart = text.indexOf('{');
+  const objEnd = text.lastIndexOf('}');
+  if (objStart !== -1 && objEnd > objStart) {
+    text = text.substring(objStart, objEnd + 1);
+  }
+
+  // Attempt 1: direct parse (works for clean JSON)
+  try {
+    return JSON.parse(text);
+  } catch { /* continue */ }
+
+  // Attempt 2: regex-based key-value extraction (handles all malformed JSON)
+  try {
+    const result: Record<string, any> = {};
+
+    // Match "key": "value" or "key": ["array"] or "key": number
+    // For string values, capture everything between the colon-quote and the pattern "next-key-or-end"
+    const keyPattern = /"([^"]+)"\s*:\s*/g;
+    const keys: { key: string; index: number }[] = [];
+    let m;
+    while ((m = keyPattern.exec(text)) !== null) {
+      keys.push({ key: m[1], index: m.index + m[0].length });
+    }
+
+    for (let i = 0; i < keys.length; i++) {
+      const { key, index } = keys[i];
+      const nextKeyIndex = i + 1 < keys.length ? keys[i + 1].index : text.length;
+      // Get the raw value substring between this key's value start and the next key
+      const rawValue = text.substring(index, nextKeyIndex).trim();
+
+      if (rawValue.startsWith('[')) {
+        // Array value — extract items between [ and ]
+        const arrEnd = rawValue.indexOf(']');
+        if (arrEnd !== -1) {
+          const inner = rawValue.substring(1, arrEnd);
+          result[key] = inner
+            .split(',')
+            .map((s) => s.trim().replace(/^["']|["']$/g, ''))
+            .filter(Boolean);
+        } else {
+          result[key] = [];
+        }
+      } else if (rawValue.startsWith('"')) {
+        // String value — find content between first " and the last " before the next key
+        // Remove the opening quote
+        let val = rawValue.substring(1);
+        // Remove trailing comma, closing brace, and find the last quote
+        val = val.replace(/[,}\s]+$/, '');
+        if (val.endsWith('"')) {
+          val = val.slice(0, -1);
+        }
+        // Unescape common sequences
+        val = val.replace(/\\n/g, '\n').replace(/\\r/g, '').replace(/\\t/g, '\t').replace(/\\"/g, '"');
+        result[key] = val;
+      } else {
+        // Number, boolean, etc.
+        const numVal = parseFloat(rawValue);
+        if (!isNaN(numVal) && rawValue.match(/^[\d.]+/)) {
+          result[key] = numVal;
+        } else {
+          result[key] = rawValue.replace(/[,}\s]+$/, '').replace(/^["']|["']$/g, '');
+        }
+      }
+    }
+
+    if (Object.keys(result).length > 0) {
+      return result as T;
+    }
+  } catch { /* continue */ }
+
+  // Attempt 3: last resort — strip all control chars and try parse
+  try {
+    const stripped = text.replace(/[\x00-\x09\x0b\x0c\x0e-\x1f\x7f]/g, '')
+      .replace(/,\s*([}\]])/g, '$1');
+    return JSON.parse(stripped);
+  } catch {
+    throw new Error('Failed to parse AI response as JSON');
+  }
+}
+
+/** Strip leaked markdown headers, labels, and excess whitespace from AI string values */
+function cleanValue(val: unknown): string {
+  if (typeof val !== 'string') return String(val ?? '');
+  return val
+    .replace(/^#+\s*.+\n?/gm, '')          // Remove markdown headers (## Why It Matters)
+    .replace(/^\*\*[^*]+\*\*\s*/gm, '')    // Remove bold labels (**Why:**)
+    .replace(/\n{3,}/g, '\n\n')             // Collapse triple+ newlines
+    .trim();
 }
 
 export async function generateExplanation(news: NewsItem): Promise<{
@@ -176,28 +220,26 @@ export async function generateExplanation(news: NewsItem): Promise<{
   const cached = getCached<{ explanation: string; whyTrending: string; whyMatters: string }>('explanation', cacheKey);
   if (cached) return cached;
 
-  const prompt = `You are an expert news analyst for a modern, Gen-Z audience. Given this news article, produce a rich, engaging breakdown.
+  const prompt = `Analyze this news article. Respond ONLY with a valid JSON object, no markdown, no extra text.
 
 Headline: ${news.title}
 Description: ${news.description}
 Source: ${news.source}
-Category: ${news.category}
 
-Respond in JSON format with these exact keys:
-{
-  "explanation": "Write a thorough 2-3 paragraph explanation of what happened. Be conversational and clear. Cover the key facts, the people/organizations involved, and the timeline. Each paragraph should be 3-5 sentences. No bullet points.",
-  "whyTrending": "Write 2 paragraphs explaining why this is trending right now. Reference social media buzz, public interest, timing, and relevance. Each paragraph 2-3 sentences.",
-  "whyMatters": "Write 2 paragraphs on why this matters to everyday people. Explain the real-world impact on jobs, money, health, rights, or daily life. Each paragraph 2-3 sentences."
-}
+Rules:
+- Each value must be 40-80 words MAX. Be concise.
+- No markdown headers, no bullet points, no labels inside values.
+- Plain conversational text only.
+- Output MUST be parseable JSON.
 
-Make it informative but engaging — like a smart friend explaining the news over coffee.`;
+{"explanation": "2-3 sentence summary of what happened, who is involved, and key facts.", "whyTrending": "2-3 sentences on why this is getting attention right now.", "whyMatters": "2-3 sentences on real-world impact for everyday people."}`;
 
-  const result = await callAI(prompt);
-  const parsed = JSON.parse(result);
+  const result = await callAI('explanation', prompt);
+  const parsed = parseAIJson<any>(result);
   const data = {
-    explanation: parsed.explanation,
-    whyTrending: parsed.whyTrending,
-    whyMatters: parsed.whyMatters,
+    explanation: cleanValue(parsed.explanation),
+    whyTrending: cleanValue(parsed.whyTrending),
+    whyMatters: cleanValue(parsed.whyMatters),
   };
   setCache('explanation', cacheKey, data);
   return data;
@@ -207,46 +249,56 @@ export async function generateCreatorScript(
   news: NewsItem,
   format: CreatorScript['format'] = 'youtube-short'
 ): Promise<CreatorScript> {
-  if (!config.hasAI) {
-    throw new Error('No AI API key configured. Add VITE_GROQ_API_KEY or VITE_GEMINI_API_KEY to your .env file.');
-  }
-
   // Check cache by article URL + format
   const cacheKey = (news.sourceUrl || news.title) + ':' + format;
   const cached = getCached<CreatorScript>('script', cacheKey);
   if (cached) return { ...cached, id: `script-${Date.now()}`, createdAt: new Date().toISOString() };
 
-  const formatGuide = {
-    'youtube-short': '60 seconds, punchy, hook-driven, vertical video',
-    'tiktok': '30-45 seconds, trendy, fast-paced, casual tone',
-    'instagram-reel': '30-60 seconds, visual, polished, engaging captions',
-    'long-form': '5-10 minutes, detailed, educational, structured with chapters',
+  const formatGuide: Record<string, { style: string; duration: string; tone: string }> = {
+    'youtube-short': { style: 'YouTube Shorts', duration: '45-55 seconds', tone: 'conversational, slightly dramatic, storytelling pacing' },
+    'tiktok': { style: 'TikTok', duration: '30-45 seconds', tone: 'trendy, fast-paced, casual, high energy' },
+    'instagram-reel': { style: 'Instagram Reel', duration: '30-60 seconds', tone: 'polished, visual, aspirational, engaging' },
+    'long-form': { style: 'YouTube Long Form', duration: '5-8 minutes', tone: 'detailed, educational, structured with chapters' },
   };
 
-  const prompt = `You are a top-tier viral content scriptwriter. Create a complete ${format} script for this news story.
+  const fg = formatGuide[format] || formatGuide['youtube-short'];
 
-Format guidelines: ${formatGuide[format]}
+  const prompt = `Create a highly engaging ${fg.style} script (${fg.duration}) on this topic. Respond ONLY with valid JSON, no markdown.
 
-Headline: ${news.title}
+Topic: ${news.title}
 Context: ${news.explanation || news.description}
-Category: ${news.category}
 
-Respond in JSON:
-{
-  "hook": "Opening hook (first 3 seconds) — must stop the scroll. Be provocative or surprising.",
-  "body": "Main content — deliver the story with energy. Include specific facts, names, numbers. Make it feel urgent.",
-  "ending": "Strong call to action / closing — drive engagement (comment, follow, share).",
-  "fullScript": "Complete script ready to read aloud, with natural pauses and emphasis cues.",
-  "duration": "Estimated duration"
-}`;
+Script structure:
+1. Strong hook (curiosity, "what if", or psychology-based opener) — 1-2 sentences
+2. Short relatable setup — 1-2 sentences connecting to audience
+3. 2-4 fast-paced surprising points — short punchy sentences
+4. Twist or payoff near the end — 1-2 sentences
+5. Subtle call to action — 1 sentence
 
-  const result = await callAI(prompt);
-  const parsed = JSON.parse(result);
+Style: ${fg.tone}. Short sentences. High retention pacing. Storytelling, not lecturing.
+
+JSON format:
+{"hook": "scroll-stopping opener, 1-2 sentences", "setup": "relatable setup connecting topic to viewer, 1-2 sentences", "points": ["point 1 - surprising fact or angle", "point 2", "point 3"], "twist": "unexpected twist or payoff, 1-2 sentences", "cta": "subtle call to action, 1 sentence", "fullScript": "complete script combining all parts above, ready to read aloud, ${fg.duration} when spoken", "duration": "${fg.duration}", "viralTitle": "catchy title under 80 chars with emoji", "description": "engaging 1-2 sentence description for post caption", "tags": ["8-10 relevant hashtags without #"], "thumbnailText": "max 5 words for thumbnail overlay", "thumbnailIdea": "1 sentence describing thumbnail visual concept", "imagePrompt": "detailed 9:16 AI image prompt, cartoon or cinematic style, vivid colors, no text"}`;
+
+  const result = await callAI('script', prompt, 1200);
+  const parsed = parseAIJson<any>(result);
   const script: CreatorScript = {
     id: `script-${Date.now()}`,
     newsId: news.id,
-    ...parsed,
+    hook: cleanValue(parsed.hook),
+    setup: cleanValue(parsed.setup),
+    points: Array.isArray(parsed.points) ? parsed.points.map((p: any) => cleanValue(p)) : [],
+    twist: cleanValue(parsed.twist),
+    cta: cleanValue(parsed.cta),
+    fullScript: cleanValue(parsed.fullScript),
     format,
+    duration: String(parsed.duration || fg.duration),
+    viralTitle: cleanValue(parsed.viralTitle),
+    description: cleanValue(parsed.description),
+    tags: Array.isArray(parsed.tags) ? parsed.tags.map((t: any) => String(t).replace(/^#/, '')) : [],
+    thumbnailText: cleanValue(parsed.thumbnailText),
+    thumbnailIdea: cleanValue(parsed.thumbnailIdea),
+    imagePrompt: cleanValue(parsed.imagePrompt),
     createdAt: new Date().toISOString(),
   };
   setCache('script', cacheKey, script);
@@ -254,32 +306,22 @@ Respond in JSON:
 }
 
 export async function generateCreatorInsights(news: NewsItem): Promise<CreatorInsight> {
-  if (!config.hasAI) {
-    throw new Error('No AI API key configured. Add VITE_GROQ_API_KEY or VITE_GEMINI_API_KEY to your .env file.');
-  }
-
   const cacheKey = news.sourceUrl || news.title;
   const cached = getCached<CreatorInsight>('insights', cacheKey);
   if (cached) return cached;
 
-  const prompt = `You are a social media strategist and content consultant. Analyze this news story for creator content potential.
+  const prompt = `Analyze this news story for creator content potential. Respond ONLY with a valid JSON object, no markdown.
 
 Headline: ${news.title}
 Description: ${news.description}
 Category: ${news.category}
-Trend Score: ${news.trendScore}
 
-Respond in JSON:
-{
-  "viralReason": "2-3 sentences on exactly why this story has viral potential",
-  "bestAngle": "2-3 sentences on the best unique angle a creator should take",
-  "targetAudience": "Specific audience description — demographics, interests, platforms",
-  "suggestedHashtags": ["exactly 7 relevant trending hashtags"],
-  "engagementTips": ["5 specific, actionable tips for maximizing engagement on this story"]
-}`;
+Rules: Keep string values under 40 words each. No markdown, no headers inside values.
 
-  const result = await callAI(prompt);
-  const data = JSON.parse(result);
+{"viralReason": "2 sentences on viral potential", "bestAngle": "2 sentences on best creator angle", "targetAudience": "One sentence on target demographics", "suggestedHashtags": ["7 hashtags"], "engagementTips": ["5 short tips, one sentence each"]}`;
+
+  const result = await callAI('insights', prompt);
+  const data = parseAIJson<CreatorInsight>(result);
   setCache('insights', cacheKey, data);
   return data;
 }
@@ -307,8 +349,8 @@ Rules:
 
 Respond in JSON: { "narration": "your narration text here" }`;
 
-  const result = await callAI(prompt);
-  const parsed = JSON.parse(result);
+  const result = await callAI('narration', prompt);
+  const parsed = parseAIJson<any>(result);
   const narration = parsed.narration;
   setCache('narration', cacheKey, narration);
   return narration;

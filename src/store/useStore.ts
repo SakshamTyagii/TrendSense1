@@ -1,6 +1,7 @@
 import { create } from 'zustand';
 import type { User, NewsItem, Category, CreatorScript, CreatorReel } from '../types';
 import { fetchNews, searchNews } from '../lib/newsService';
+import { supabase } from '../lib/supabase';
 
 interface AppState {
   // Auth
@@ -9,11 +10,13 @@ interface AppState {
   isAuthLoading: boolean;
   login: (provider: 'google' | 'twitter') => Promise<void>;
   logout: () => void;
+  initAuth: () => Promise<void>;
   
   // News
   news: NewsItem[];
   filteredNews: NewsItem[];
   pendingNews: NewsItem[] | null;
+  newsCache: Record<string, { articles: NewsItem[]; fetchedAt: number }>;
   selectedCategory: Category | null;
   selectedNews: NewsItem | null;
   isLoadingNews: boolean;
@@ -53,49 +56,99 @@ interface AppState {
   // User behavior
   addToHistory: (newsId: string) => void;
   toggleSaved: (newsId: string) => void;
+  togglePreference: (key: 'autoPlayAudio' | 'notifications') => void;
 }
 
 export const useStore = create<AppState>((set, get) => ({
   // Auth
   user: null,
   isAuthenticated: false,
-  isAuthLoading: false,
+  isAuthLoading: true,
   
   login: async (provider) => {
     set({ isAuthLoading: true });
     
-    // Simulate OAuth flow
-    await new Promise(r => setTimeout(r, 1500));
-    
-    const user: User = {
-      id: `user-${Date.now()}`,
-      name: provider === 'google' ? 'Alex Creator' : 'Alex Creator',
-      email: 'alex@trendsense.ai',
-      avatar: `https://api.dicebear.com/7.x/avataaars/svg?seed=${Date.now()}`,
-      provider,
-      preferences: {
-        categories: ['tech', 'finance', 'entertainment'],
-        autoPlayAudio: false,
-        darkMode: true,
-      },
-      history: [],
-      savedStories: [],
-      createdAt: new Date().toISOString(),
-    };
-    
-    localStorage.setItem('trendsense_user', JSON.stringify(user));
-    set({ user, isAuthenticated: true, isAuthLoading: false });
+    try {
+      const { error } = await supabase.auth.signInWithOAuth({
+        provider: provider === 'twitter' ? 'twitter' : 'google',
+        options: {
+          redirectTo: `${window.location.origin}/`,
+        },
+      });
+      
+      if (error) {
+        console.error('OAuth error:', error);
+        set({ isAuthLoading: false });
+      }
+      // Don't set isAuthLoading to false here — the page will redirect
+      // Auth state is picked up by initAuth() after the redirect
+    } catch (err) {
+      console.error('Login failed:', err);
+      set({ isAuthLoading: false });
+    }
   },
   
-  logout: () => {
+  logout: async () => {
+    await supabase.auth.signOut();
     localStorage.removeItem('trendsense_user');
     set({ user: null, isAuthenticated: false });
+  },
+
+  initAuth: async () => {
+    // Helper to build user object from Supabase session user
+    const buildUser = (su: any): User => {
+      const user: User = {
+        id: su.id,
+        name: su.user_metadata?.full_name || su.user_metadata?.name || 'User',
+        email: su.email || '',
+        avatar: su.user_metadata?.avatar_url || su.user_metadata?.picture || `https://api.dicebear.com/7.x/avataaars/svg?seed=${su.id}`,
+        provider: (su.app_metadata?.provider as 'google' | 'twitter') || 'google',
+        preferences: {
+          categories: ['tech', 'finance', 'entertainment'],
+          autoPlayAudio: false,
+          darkMode: true,
+        },
+        history: [],
+        savedStories: [],
+        createdAt: su.created_at || new Date().toISOString(),
+      };
+      // Merge with any persisted preferences
+      const saved = localStorage.getItem('trendsense_user');
+      if (saved) {
+        try {
+          const parsed = JSON.parse(saved);
+          if (parsed.id === user.id) {
+            user.preferences = parsed.preferences || user.preferences;
+            user.history = parsed.history || [];
+            user.savedStories = parsed.savedStories || [];
+          }
+        } catch { /* ignore */ }
+      }
+      return user;
+    };
+
+    // onAuthStateChange is the primary session detector.
+    // It fires reliably after OAuth redirect (PKCE code exchange),
+    // token refresh, and sign-out — avoiding race conditions with getSession().
+    // Listen for all auth state changes (login, logout, token refresh, initial check)
+    supabase.auth.onAuthStateChange((_event, session) => {
+      if (session?.user) {
+        const user = buildUser(session.user);
+        localStorage.setItem('trendsense_user', JSON.stringify(user));
+        set({ user, isAuthenticated: true, isAuthLoading: false });
+      } else {
+        // No session — covers INITIAL_SESSION (no user), SIGNED_OUT, TOKEN_REFRESHED (failure)
+        localStorage.removeItem('trendsense_user');
+        set({ user: null, isAuthenticated: false, isAuthLoading: false });
+      }
+    });
   },
   
   // News
   news: [],
   filteredNews: [],
   pendingNews: null,
+  newsCache: {},
   selectedCategory: null,
   selectedNews: null,
   isLoadingNews: false,
@@ -103,13 +156,24 @@ export const useStore = create<AppState>((set, get) => ({
   searchQuery: '',
   
   loadNews: async (category) => {
+    // Check cache first (5-minute TTL)
+    const cacheKey = category || '__all__';
+    const cached = get().newsCache[cacheKey];
+    if (cached && Date.now() - cached.fetchedAt < 5 * 60 * 1000) {
+      set({ news: cached.articles, filteredNews: cached.articles, isLoadingNews: false, newsError: null });
+      return;
+    }
+
     set({ isLoadingNews: true, newsError: null, pendingNews: null });
     try {
       const news = await fetchNews(category);
+      // Update cache
+      const newsCache = { ...get().newsCache, [cacheKey]: { articles: news, fetchedAt: Date.now() } };
       set({ 
         news, 
         filteredNews: news,
-        isLoadingNews: false 
+        isLoadingNews: false,
+        newsCache,
       });
 
       // Seed demo reels on first load so carousel is never empty
@@ -222,7 +286,10 @@ export const useStore = create<AppState>((set, get) => ({
   
   // Creator
   scripts: [],
-  addScript: (script) => set({ scripts: [...get().scripts, script] }),
+  addScript: (script) => {
+    const scripts = [...get().scripts, script].slice(-100);
+    set({ scripts });
+  },
   
   // Reels (stored in localStorage for MVP)
   reels: JSON.parse(localStorage.getItem('trendsense_reels') || '[]'),
@@ -232,7 +299,7 @@ export const useStore = create<AppState>((set, get) => ({
   },
   
   addReel: (reel: CreatorReel) => {
-    const reels = [...get().reels, reel];
+    const reels = [...get().reels, reel].slice(-50);
     set({ reels });
     localStorage.setItem('trendsense_reels', JSON.stringify(reels));
   },
@@ -260,10 +327,19 @@ export const useStore = create<AppState>((set, get) => ({
     if (user) {
       const saved = user.savedStories.includes(newsId)
         ? user.savedStories.filter(id => id !== newsId)
-        : [newsId, ...user.savedStories];
+        : [newsId, ...user.savedStories].slice(0, 500);
       user.savedStories = saved;
       set({ user: { ...user } });
       localStorage.setItem('trendsense_user', JSON.stringify(user));
+    }
+  },
+
+  togglePreference: (key) => {
+    const user = get().user;
+    if (user) {
+      const updated = { ...user, preferences: { ...user.preferences, [key]: !user.preferences[key as keyof typeof user.preferences] } };
+      set({ user: updated });
+      localStorage.setItem('trendsense_user', JSON.stringify(updated));
     }
   },
 }));

@@ -58,11 +58,19 @@ export interface CreatorScript {
   id: string;
   newsId: string;
   hook: string;
-  body: string;
-  ending: string;
+  setup: string;
+  points: string[];
+  twist: string;
+  cta: string;
   fullScript: string;
   format: 'youtube-short' | 'tiktok' | 'instagram-reel' | 'long-form';
   duration: string;
+  viralTitle: string;
+  description: string;
+  tags: string[];
+  thumbnailText: string;
+  thumbnailIdea: string;
+  imagePrompt: string;
   createdAt: string;
 }
 

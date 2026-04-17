@@ -20,8 +20,25 @@ function getPreferredVoice(): SpeechSynthesisVoice | null {
   return voices.find(v => v.lang.startsWith('en')) || null;
 }
 
-export function speakText(text: string, onEnd?: () => void): void {
+export type VoiceStyle = 'professional' | 'casual' | 'energetic' | 'calm';
+
+const VOICE_PRESETS: Record<VoiceStyle, { rate: number; pitch: number }> = {
+  professional: { rate: 0.9, pitch: 1.0 },
+  casual: { rate: 1.0, pitch: 1.1 },
+  energetic: { rate: 1.15, pitch: 1.2 },
+  calm: { rate: 0.8, pitch: 0.9 },
+};
+
+export function speakText(text: string, onEnd?: () => void, style: VoiceStyle = 'professional'): void {
   stopSpeaking();
+
+  if (!text || text.trim().length === 0) {
+    onEnd?.();
+    return;
+  }
+
+  // Truncate very long text for browser TTS safety
+  const safeText = text.length > 5000 ? text.slice(0, 5000) + '...' : text;
 
   if (!('speechSynthesis' in window)) {
     console.warn('SpeechSynthesis not supported in this browser');
@@ -29,11 +46,13 @@ export function speakText(text: string, onEnd?: () => void): void {
     return;
   }
 
+  const preset = VOICE_PRESETS[style];
+
   // Chrome bug: voices may not be loaded yet
   const trySpeak = () => {
-    const utterance = new SpeechSynthesisUtterance(text);
-    utterance.rate = 1;
-    utterance.pitch = 1;
+    const utterance = new SpeechSynthesisUtterance(safeText);
+    utterance.rate = preset.rate;
+    utterance.pitch = preset.pitch;
     utterance.volume = 1;
 
     const voice = getPreferredVoice();
@@ -69,11 +88,12 @@ export function stopSpeaking() {
 }
 
 export function downloadScript(text: string, filename: string) {
+  const safeFilename = filename.replace(/[^a-zA-Z0-9_-]/g, '_');
   const blob = new Blob([text], { type: 'text/plain' });
   const url = URL.createObjectURL(blob);
   const a = document.createElement('a');
   a.href = url;
-  a.download = `${filename}.txt`;
+  a.download = `${safeFilename}.txt`;
   document.body.appendChild(a);
   a.click();
   document.body.removeChild(a);

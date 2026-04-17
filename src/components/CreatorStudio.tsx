@@ -3,7 +3,10 @@ import { motion, AnimatePresence } from 'framer-motion';
 import { ArrowLeft, Sparkles, Download, Copy, Check, Play, Pause, FileText, Mic, TrendingUp, Target, Hash, Lightbulb, Loader2, ChevronDown, ChevronUp, Upload, Film, X } from 'lucide-react';
 import { useStore } from '../store/useStore';
 import { generateCreatorScript, generateCreatorInsights } from '../lib/aiService';
-import { speakText, stopSpeaking, downloadScript } from '../lib/ttsService';
+import { speakText, stopSpeaking, downloadScript, type VoiceStyle } from '../lib/ttsService';
+import { canUseFeature, trackUsageWithServer } from '../lib/subscription';
+import { supabase } from '../lib/supabase';
+import ProGate from './ProGate';
 import type { CreatorScript, CreatorInsight, CreatorReel } from '../types';
 
 export default function CreatorStudio() {
@@ -16,6 +19,8 @@ export default function CreatorStudio() {
   const [scriptError, setScriptError] = useState<string | null>(null);
   const [copied, setCopied] = useState(false);
   const [expandedInsight, setExpandedInsight] = useState<string | null>('viral');
+  const [voiceStyle, setVoiceStyle] = useState<VoiceStyle>('professional');
+  const [showProGate, setShowProGate] = useState<{ feature: string; used: number; limit: number } | null>(null);
   
   // Upload reel state
   const [videoFile, setVideoFile] = useState<File | null>(null);
@@ -27,12 +32,18 @@ export default function CreatorStudio() {
 
   const handleGenerateScript = async () => {
     if (!news) return;
+    const check = canUseFeature('scripts');
+    if (!check.allowed) {
+      setShowProGate({ feature: 'script generations', used: check.used, limit: check.limit });
+      return;
+    }
     setIsGenerating(true);
     setScriptError(null);
     try {
       const result = await generateCreatorScript(news, format);
       setScript(result);
       addScript(result);
+      if (user) await trackUsageWithServer(user.id, 'scripts');
     } catch (err: any) {
       console.error('Script generation failed:', err);
       setScriptError(err?.message || 'Failed to generate script');
@@ -43,9 +54,15 @@ export default function CreatorStudio() {
 
   const handleGenerateInsights = async () => {
     if (!news) return;
+    const check = canUseFeature('scripts');
+    if (!check.allowed) {
+      setShowProGate({ feature: 'AI generations', used: check.used, limit: check.limit });
+      return;
+    }
     try {
       const result = await generateCreatorInsights(news);
       setInsights(result);
+      if (user) await trackUsageWithServer(user.id, 'scripts');
     } catch (err: any) {
       console.error('Insights generation failed:', err);
     }
@@ -62,7 +79,7 @@ export default function CreatorStudio() {
       stopSpeaking();
       setPlaying(false);
     } else if (script) {
-      speakText(script.fullScript, () => setPlaying(false));
+      speakText(script.fullScript, () => setPlaying(false), voiceStyle);
       setPlaying(true, 'creator-preview');
     }
   };
@@ -85,10 +102,30 @@ export default function CreatorStudio() {
 
   const handleUploadReel = async () => {
     if (!videoFile || !news || !user) return;
+    const check = canUseFeature('reelUploads');
+    if (!check.allowed) {
+      setShowProGate({ feature: 'reel uploads', used: check.used, limit: check.limit });
+      return;
+    }
     setIsUploading(true);
     
-    // Store video as blob URL (IndexedDB for production, URL for MVP)
-    const videoUrl = videoPreviewUrl || URL.createObjectURL(videoFile);
+    let videoUrl = videoPreviewUrl || URL.createObjectURL(videoFile);
+    
+    // Upload to Supabase Storage (cloud) — falls back to blob URL if Supabase not configured
+    try {
+      const filePath = `${user.id}/${Date.now()}-${videoFile.name}`;
+      const { data, error } = await supabase.storage
+        .from('reels')
+        .upload(filePath, videoFile, { contentType: videoFile.type });
+      
+      if (!error && data) {
+        const { data: publicUrl } = supabase.storage.from('reels').getPublicUrl(data.path);
+        videoUrl = publicUrl.publicUrl;
+      }
+    } catch {
+      // Fall back to blob URL if storage fails (local dev)
+      console.warn('Supabase Storage not available, using local blob URL');
+    }
     
     const reel: CreatorReel = {
       id: `reel-${Date.now()}`,
@@ -106,9 +143,8 @@ export default function CreatorStudio() {
     };
     
     addReel(reel);
+    if (user) await trackUsageWithServer(user.id, 'reelUploads');
     
-    // Simulate brief upload delay
-    await new Promise(r => setTimeout(r, 800));
     setIsUploading(false);
     setUploadSuccess(true);
     setVideoFile(null);
@@ -122,7 +158,40 @@ export default function CreatorStudio() {
     setUploadSuccess(false);
   };
 
-  if (!news) return null;
+  if (!news) {
+    return (
+      <motion.div
+        initial={{ opacity: 0, x: '100%' }}
+        animate={{ opacity: 1, x: 0 }}
+        exit={{ opacity: 0, x: '100%' }}
+        transition={{ type: 'spring', damping: 25, stiffness: 200 }}
+        className="fixed inset-0 z-50 bg-[#0a0a0f] flex flex-col items-center justify-center px-6"
+      >
+        <div className="w-16 h-16 rounded-full bg-purple-500/10 flex items-center justify-center mb-4">
+          <Sparkles className="w-8 h-8 text-purple-400" />
+        </div>
+        <h2 className="text-white font-bold text-lg mb-2">No Story Selected</h2>
+        <p className="text-gray-400 text-sm text-center mb-6">
+          Select a story from the feed to generate scripts, voiceovers, and insights.
+        </p>
+        <button
+          onClick={() => setView('feed')}
+          className="flex items-center gap-2 px-6 py-3 rounded-full bg-purple-500/20 text-purple-300 font-semibold text-sm border border-purple-500/20"
+        >
+          Browse Stories
+        </button>
+      </motion.div>
+    );
+  }
+
+  const proGateModal = showProGate && (
+    <ProGate
+      feature={showProGate.feature}
+      used={showProGate.used}
+      limit={showProGate.limit}
+      onClose={() => setShowProGate(null)}
+    />
+  );
 
   const formats: { id: CreatorScript['format']; label: string; icon: string }[] = [
     { id: 'youtube-short', label: 'YT Short', icon: '▶️' },
@@ -132,6 +201,8 @@ export default function CreatorStudio() {
   ];
 
   return (
+    <>
+    {proGateModal}
     <motion.div
       initial={{ opacity: 0, x: '100%' }}
       animate={{ opacity: 1, x: 0 }}
@@ -252,36 +323,131 @@ export default function CreatorStudio() {
                 </div>
               ) : script ? (
                 <div className="space-y-4">
+                  {/* Viral Title */}
+                  {script.viralTitle && (
+                    <div className="bg-gradient-to-r from-pink-500/10 to-purple-500/10 border border-pink-500/20 rounded-2xl p-4">
+                      <p className="text-xs font-bold text-pink-400 uppercase tracking-wider mb-1">🔥 Viral Title</p>
+                      <p className="text-white text-base font-bold leading-snug">{script.viralTitle}</p>
+                    </div>
+                  )}
+
                   {/* Hook */}
                   <div className="bg-gradient-to-r from-orange-500/10 to-red-500/10 border border-orange-500/20 rounded-2xl p-4">
                     <div className="flex items-center gap-2 mb-2">
                       <span className="text-xs font-bold text-orange-400 uppercase tracking-wider">🎣 Hook</span>
-                      <span className="text-[10px] text-gray-600">First 3 seconds</span>
+                      <span className="text-[10px] text-gray-600">First 3 seconds — stop the scroll</span>
                     </div>
                     <p className="text-white text-sm leading-relaxed">{script.hook}</p>
                   </div>
 
-                  {/* Body */}
-                  <div className="bg-white/5 border border-white/5 rounded-2xl p-4">
-                    <div className="flex items-center gap-2 mb-2">
-                      <span className="text-xs font-bold text-gray-400 uppercase tracking-wider">📝 Body</span>
+                  {/* Setup */}
+                  {script.setup && (
+                    <div className="bg-white/5 border border-white/5 rounded-2xl p-4">
+                      <div className="flex items-center gap-2 mb-2">
+                        <span className="text-xs font-bold text-blue-400 uppercase tracking-wider">🎯 Setup</span>
+                        <span className="text-[10px] text-gray-600">Relatable connection</span>
+                      </div>
+                      <p className="text-gray-300 text-sm leading-relaxed">{script.setup}</p>
                     </div>
-                    <p className="text-gray-300 text-sm leading-relaxed whitespace-pre-line">{script.body}</p>
-                  </div>
+                  )}
 
-                  {/* Ending */}
-                  <div className="bg-gradient-to-r from-green-500/10 to-emerald-500/10 border border-green-500/20 rounded-2xl p-4">
-                    <div className="flex items-center gap-2 mb-2">
-                      <span className="text-xs font-bold text-green-400 uppercase tracking-wider">🎬 Ending / CTA</span>
+                  {/* Key Points */}
+                  {script.points && script.points.length > 0 && (
+                    <div className="bg-white/5 border border-white/5 rounded-2xl p-4">
+                      <div className="flex items-center gap-2 mb-3">
+                        <span className="text-xs font-bold text-cyan-400 uppercase tracking-wider">⚡ Key Points</span>
+                        <span className="text-[10px] text-gray-600">Fast-paced delivery</span>
+                      </div>
+                      <div className="space-y-2">
+                        {script.points.map((point, i) => (
+                          <div key={i} className="flex items-start gap-3">
+                            <span className="flex-shrink-0 w-5 h-5 rounded-full bg-cyan-500/20 text-cyan-400 text-xs font-bold flex items-center justify-center mt-0.5">{i + 1}</span>
+                            <p className="text-gray-300 text-sm leading-relaxed">{point}</p>
+                          </div>
+                        ))}
+                      </div>
                     </div>
-                    <p className="text-white text-sm leading-relaxed">{script.ending}</p>
-                  </div>
+                  )}
 
-                  {/* Duration */}
+                  {/* Twist / Payoff */}
+                  {script.twist && (
+                    <div className="bg-gradient-to-r from-yellow-500/10 to-amber-500/10 border border-yellow-500/20 rounded-2xl p-4">
+                      <div className="flex items-center gap-2 mb-2">
+                        <span className="text-xs font-bold text-yellow-400 uppercase tracking-wider">🔀 Twist</span>
+                        <span className="text-[10px] text-gray-600">The payoff</span>
+                      </div>
+                      <p className="text-white text-sm leading-relaxed">{script.twist}</p>
+                    </div>
+                  )}
+
+                  {/* CTA */}
+                  {script.cta && (
+                    <div className="bg-gradient-to-r from-green-500/10 to-emerald-500/10 border border-green-500/20 rounded-2xl p-4">
+                      <div className="flex items-center gap-2 mb-2">
+                        <span className="text-xs font-bold text-green-400 uppercase tracking-wider">📢 Call to Action</span>
+                      </div>
+                      <p className="text-white text-sm leading-relaxed">{script.cta}</p>
+                    </div>
+                  )}
+
+                  {/* Duration + Format */}
                   <div className="flex items-center justify-between px-2">
                     <span className="text-xs text-gray-600">Est. Duration: <span className="text-gray-400">{script.duration}</span></span>
                     <span className="text-xs text-gray-600">Format: <span className="text-gray-400">{format}</span></span>
                   </div>
+
+                  {/* Description */}
+                  {script.description && (
+                    <div className="bg-white/5 border border-white/5 rounded-2xl p-4">
+                      <p className="text-xs font-bold text-gray-400 uppercase tracking-wider mb-2">📝 Caption / Description</p>
+                      <p className="text-gray-300 text-sm leading-relaxed">{script.description}</p>
+                    </div>
+                  )}
+
+                  {/* Tags */}
+                  {script.tags && script.tags.length > 0 && (
+                    <div className="bg-white/5 border border-white/5 rounded-2xl p-4">
+                      <p className="text-xs font-bold text-gray-400 uppercase tracking-wider mb-3">🏷️ Tags</p>
+                      <div className="flex flex-wrap gap-2">
+                        {script.tags.map((tag, i) => (
+                          <button
+                            key={i}
+                            onClick={() => handleCopy(`#${tag}`)}
+                            className="text-xs text-blue-400 bg-blue-500/10 px-3 py-1.5 rounded-full hover:bg-blue-500/20 transition-all"
+                          >
+                            #{tag}
+                          </button>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+
+                  {/* Thumbnail */}
+                  {(script.thumbnailText || script.thumbnailIdea) && (
+                    <div className="bg-gradient-to-r from-indigo-500/10 to-violet-500/10 border border-indigo-500/20 rounded-2xl p-4">
+                      <p className="text-xs font-bold text-indigo-400 uppercase tracking-wider mb-2">🖼️ Thumbnail</p>
+                      {script.thumbnailText && (
+                        <p className="text-white text-lg font-black mb-2">{script.thumbnailText}</p>
+                      )}
+                      {script.thumbnailIdea && (
+                        <p className="text-gray-400 text-xs">{script.thumbnailIdea}</p>
+                      )}
+                    </div>
+                  )}
+
+                  {/* AI Image Prompt */}
+                  {script.imagePrompt && (
+                    <div className="bg-white/5 border border-white/5 rounded-2xl p-4">
+                      <p className="text-xs font-bold text-gray-400 uppercase tracking-wider mb-2">🎨 AI Image Prompt</p>
+                      <p className="text-gray-400 text-xs leading-relaxed font-mono">{script.imagePrompt}</p>
+                      <button
+                        onClick={() => handleCopy(script.imagePrompt)}
+                        className="mt-2 text-xs text-purple-400 hover:text-purple-300 transition-colors"
+                      >
+                        {copied ? '✓ Copied' : 'Copy prompt'}
+                      </button>
+                    </div>
+                  )}
 
                   {/* Actions */}
                   <div className="flex items-center gap-3 pt-4">
@@ -372,16 +538,22 @@ export default function CreatorStudio() {
               <div className="space-y-4">
                 <h3 className="text-sm font-bold text-gray-400 uppercase tracking-wider">Voice Settings</h3>
                 <div className="grid grid-cols-2 gap-3">
-                  {['Professional', 'Casual', 'Energetic', 'Calm'].map((voice, i) => (
+                  {([
+                    { id: 'professional' as VoiceStyle, label: 'Professional' },
+                    { id: 'casual' as VoiceStyle, label: 'Casual' },
+                    { id: 'energetic' as VoiceStyle, label: 'Energetic' },
+                    { id: 'calm' as VoiceStyle, label: 'Calm' },
+                  ]).map((voice) => (
                     <button
-                      key={voice}
+                      key={voice.id}
+                      onClick={() => setVoiceStyle(voice.id)}
                       className={`p-3 rounded-xl text-sm font-medium transition-all ${
-                        i === 0
+                        voiceStyle === voice.id
                           ? 'bg-indigo-500/20 border border-indigo-500/30 text-indigo-300'
                           : 'bg-white/5 border border-white/5 text-gray-400 hover:text-gray-300'
                       }`}
                     >
-                      {voice}
+                      {voice.label}
                     </button>
                   ))}
                 </div>
@@ -656,5 +828,6 @@ export default function CreatorStudio() {
         </AnimatePresence>
       </div>
     </motion.div>
+    </>
   );
 }

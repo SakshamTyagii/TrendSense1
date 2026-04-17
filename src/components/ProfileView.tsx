@@ -1,27 +1,29 @@
 import { motion } from 'framer-motion';
-import { ArrowLeft, LogOut, Moon, Volume2, Bell, Shield, ChevronRight, Bookmark, Clock, Sparkles, Film, Play } from 'lucide-react';
+import { ArrowLeft, LogOut, Volume2, Bell, Shield, ChevronRight, Bookmark, Clock, Sparkles, Film, Play, Crown } from 'lucide-react';
 import { useStore } from '../store/useStore';
 import { CATEGORIES } from '../types';
+import { isPro, getDailyUsage, FREE_LIMITS } from '../lib/subscription';
 
 export default function ProfileView() {
-  const { user, logout, setView, reels } = useStore();
+  const { user, logout, setView, reels, scripts, togglePreference } = useStore();
 
   if (!user) return null;
 
   const myReels = reels.filter(r => r.creatorId === user.id);
+  const userIsPro = isPro();
+  const usage = getDailyUsage();
 
   const menuItems = [
     { icon: Bookmark, label: 'Saved Stories', count: user.savedStories.length, color: 'text-indigo-400' },
     { icon: Clock, label: 'History', count: user.history.length, color: 'text-blue-400' },
-    { icon: Sparkles, label: 'My Scripts', count: 0, color: 'text-purple-400' },
+    { icon: Sparkles, label: 'My Scripts', count: scripts.length, color: 'text-purple-400' },
     { icon: Film, label: 'My Reels', count: myReels.length, color: 'text-pink-400' },
   ];
 
   const settingsItems = [
-    { icon: Volume2, label: 'Auto-play Audio', toggle: true, value: user.preferences.autoPlayAudio },
-    { icon: Moon, label: 'Dark Mode', toggle: true, value: user.preferences.darkMode },
-    { icon: Bell, label: 'Notifications', toggle: true, value: true },
-    { icon: Shield, label: 'Privacy', toggle: false },
+    { icon: Volume2, label: 'Auto-play Audio', toggle: true, value: user.preferences.autoPlayAudio, key: 'autoPlayAudio' as const },
+    { icon: Bell, label: 'Notifications', toggle: true, value: (user.preferences as any).notifications ?? false, key: 'notifications' as const },
+    { icon: Shield, label: 'Privacy', toggle: false, key: null },
   ];
 
   return (
@@ -53,7 +55,15 @@ export default function ProfileView() {
             className="w-16 h-16 rounded-full bg-white/10"
           />
           <div>
-            <h2 className="text-xl font-bold text-white">{user.name}</h2>
+            <div className="flex items-center gap-2">
+              <h2 className="text-xl font-bold text-white">{user.name}</h2>
+              {userIsPro && (
+                <span className="flex items-center gap-1 text-xs font-bold text-amber-400 bg-amber-400/10 px-2 py-0.5 rounded-full border border-amber-400/20">
+                  <Crown className="w-3 h-3" />
+                  PRO
+                </span>
+              )}
+            </div>
             <p className="text-gray-500 text-sm">{user.email}</p>
             <span className="text-xs text-indigo-400 bg-indigo-500/10 px-2 py-0.5 rounded-full mt-1 inline-block">
               {user.provider === 'google' ? 'Google' : 'X'} Account
@@ -70,6 +80,44 @@ export default function ProfileView() {
               <p className="text-[10px] text-gray-500 uppercase tracking-wider">{item.label}</p>
             </div>
           ))}
+        </div>
+
+        {/* Daily Usage */}
+        <div className="mb-8">
+          <h3 className="text-xs text-gray-600 uppercase tracking-wider mb-3">Today's Usage</h3>
+          <div className="space-y-3">
+            {([
+              { label: 'AI Scripts', key: 'scripts' as const, color: 'bg-purple-500' },
+              { label: 'Narrations', key: 'narrations' as const, color: 'bg-blue-500' },
+              { label: 'Reel Uploads', key: 'reelUploads' as const, color: 'bg-pink-500' },
+              { label: 'Explanations', key: 'explanations' as const, color: 'bg-green-500' },
+            ]).map(item => {
+              const used = usage[item.key];
+              const limit = userIsPro ? Infinity : FREE_LIMITS[item.key];
+              const pct = userIsPro ? 0 : Math.min((used / limit) * 100, 100);
+              return (
+                <div key={item.key} className="bg-white/5 rounded-xl p-3">
+                  <div className="flex items-center justify-between mb-2">
+                    <span className="text-sm text-gray-300">{item.label}</span>
+                    <span className="text-xs text-gray-500">
+                      {used}{userIsPro ? '' : `/${limit}`}
+                    </span>
+                  </div>
+                  {!userIsPro && (
+                    <div className="h-1.5 bg-white/5 rounded-full overflow-hidden">
+                      <div
+                        className={`h-full ${item.color} rounded-full transition-all`}
+                        style={{ width: `${pct}%` }}
+                      />
+                    </div>
+                  )}
+                  {userIsPro && (
+                    <p className="text-[10px] text-amber-400">Unlimited</p>
+                  )}
+                </div>
+              );
+            })}
+          </div>
         </div>
 
         {/* My Reels */}
@@ -119,7 +167,8 @@ export default function ProfileView() {
             {settingsItems.map(item => (
               <div
                 key={item.label}
-                className="flex items-center justify-between py-3 px-3 rounded-xl hover:bg-white/5 transition-all"
+                onClick={() => item.toggle && item.key ? togglePreference(item.key) : undefined}
+                className={`flex items-center justify-between py-3 px-3 rounded-xl hover:bg-white/5 transition-all ${item.toggle ? 'cursor-pointer' : ''}`}
               >
                 <div className="flex items-center gap-3">
                   <item.icon className="w-5 h-5 text-gray-400" />

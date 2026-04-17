@@ -1,14 +1,45 @@
-import { config } from './config';
 import type { NewsItem, Category } from '../types';
+import { apiFetch } from './apiFetch';
 
-const CATEGORY_MAP: Record<Category, string> = {
-  tech: 'technology',
-  politics: 'general',
-  finance: 'business',
-  sports: 'sports',
-  entertainment: 'entertainment',
-  world: 'general',
-};
+const isDev = import.meta.env.DEV;
+const NEWS_API_KEY = import.meta.env.VITE_NEWS_API_KEY || '';
+const NEWS_API_BASE = 'https://newsapi.org/v2';
+
+// ─── Retry with exponential backoff ────────────────────────────────────
+
+async function fetchWithRetry(url: string, options?: RequestInit, retries = 3): Promise<Response> {
+  for (let attempt = 0; attempt < retries; attempt++) {
+    try {
+      const response = await fetch(url, options);
+      // Don't retry on client errors (4xx), only on server errors (5xx)
+      if (response.ok || (response.status >= 400 && response.status < 500)) {
+        return response;
+      }
+      if (attempt === retries - 1) return response;
+    } catch (err) {
+      if (attempt === retries - 1) throw err;
+    }
+    // Exponential backoff: 1s, 2s, 4s
+    await new Promise(r => setTimeout(r, 1000 * Math.pow(2, attempt)));
+  }
+  throw new Error('Max retries reached');
+}
+
+async function apiFetchWithRetry(url: string, retries = 3): Promise<Response> {
+  for (let attempt = 0; attempt < retries; attempt++) {
+    try {
+      const response = await apiFetch(url);
+      if (response.ok || (response.status >= 400 && response.status < 500)) {
+        return response;
+      }
+      if (attempt === retries - 1) return response;
+    } catch (err) {
+      if (attempt === retries - 1) throw err;
+    }
+    await new Promise(r => setTimeout(r, 1000 * Math.pow(2, attempt)));
+  }
+  throw new Error('Max retries reached');
+}
 
 function categorizeArticle(title: string, description: string): Category {
   const text = `${title} ${description}`.toLowerCase();
@@ -20,42 +51,56 @@ function categorizeArticle(title: string, description: string): Category {
   return 'world';
 }
 
-export async function fetchNews(category?: Category, query?: string): Promise<NewsItem[]> {
-  if (!config.hasNewsApi) {
-    throw new Error('News API key is not configured. Add VITE_NEWS_API_KEY to your .env file.');
+const categoryToQuery: Record<Category, string> = {
+  tech: 'technology OR AI OR software',
+  politics: 'politics OR government OR election',
+  finance: 'finance OR stock market OR economy',
+  sports: 'sports OR football OR basketball',
+  entertainment: 'entertainment OR movies OR music',
+  world: 'world news OR international',
+};
+
+async function fetchFromApi(category?: Category, query?: string): Promise<any> {
+  if (isDev && NEWS_API_KEY) {
+    // Dev mode: call NewsAPI directly (API key is only in local .env, never in production build)
+    const searchQuery = query || (category ? categoryToQuery[category] : 'trending news');
+    const url = `${NEWS_API_BASE}/everything?q=${encodeURIComponent(searchQuery)}&sortBy=publishedAt&pageSize=30&language=en&apiKey=${NEWS_API_KEY}`;
+    const response = await fetchWithRetry(url);
+    if (!response.ok) {
+      const err = await response.json().catch(() => ({ message: 'Failed to fetch news' }));
+      throw new Error(err.message || `News API error (${response.status})`);
+    }
+    return response.json();
   }
 
-  let url: string;
+  // Production: call server-side proxy — API key is NEVER in the browser
+  const params = new URLSearchParams();
+  if (query) params.set('query', query);
+  else if (category) params.set('category', category);
 
-  if (query) {
-    // Use "everything" endpoint for search queries — broader results
-    url = `https://newsapi.org/v2/everything?q=${encodeURIComponent(query)}&sortBy=publishedAt&pageSize=50&language=en`;
-  } else if (category) {
-    // Use "top-headlines" with category for category browsing
-    const apiCategory = CATEGORY_MAP[category];
-    url = `https://newsapi.org/v2/top-headlines?category=${apiCategory}&pageSize=50&language=en&country=us`;
-  } else {
-    // Default: top headlines across all categories
-    url = `https://newsapi.org/v2/top-headlines?pageSize=50&language=en&country=us`;
-  }
-
-  const response = await fetch(url, {
-    headers: { 'X-Api-Key': config.newsApiKey },
-  });
-
+  const response = await apiFetchWithRetry(`/api/news?${params.toString()}`);
   if (!response.ok) {
-    const err = await response.text();
-    throw new Error(`News API error (${response.status}): ${err}`);
+    const err = await response.json().catch(() => ({ error: 'Failed to fetch news' }));
+    throw new Error(err.error || `News API error (${response.status})`);
   }
+  return response.json();
+}
 
-  const data = await response.json();
+export async function fetchNews(category?: Category, query?: string): Promise<NewsItem[]> {
+  const data = await fetchFromApi(category, query);
 
-  if (!data.articles || data.articles.length === 0) {
+  if (!data.articles || !Array.isArray(data.articles) || data.articles.length === 0) {
     throw new Error('No articles found. Try a different category or search query.');
   }
 
   const articles = data.articles
-    .filter((a: any) => a.title && a.description && a.title !== '[Removed]' && a.description !== '[Removed]')
+    .filter((a: any) => {
+      // Validate required fields exist and aren't [Removed]
+      if (!a || typeof a !== 'object') return false;
+      if (!a.title || !a.description) return false;
+      if (a.title === '[Removed]' || a.description === '[Removed]') return false;
+      return true;
+    })
     .map((article: any, index: number) => {
       const sourceName = article.source?.name || 'Unknown';
       const cat = categorizeArticle(article.title, article.description);
