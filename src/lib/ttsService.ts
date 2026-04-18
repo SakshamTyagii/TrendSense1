@@ -127,3 +127,28 @@ export function downloadScript(text: string, filename: string) {
   document.body.removeChild(a);
   URL.revokeObjectURL(url);
 }
+
+// ── Fetch audio blob (for download without playing) ────────────────────
+
+export async function fetchAudioBlob(text: string, style: VoiceStyle = 'professional'): Promise<Blob> {
+  const res = await fetch('/api/tts', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ text: text.slice(0, 5000), style }),
+  });
+  if (!res.ok) throw new Error(`TTS API ${res.status}`);
+  const blob = await res.blob();
+  if (blob.size === 0) throw new Error('Empty audio');
+  return blob;
+}
+
+export function downloadBlob(blob: Blob, filename: string) {
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = filename;
+  document.body.appendChild(a);
+  a.click();
+  document.body.removeChild(a);
+  URL.revokeObjectURL(url);
+}

@@ -10,9 +10,10 @@ interface ProGateProps {
   limit: number;
   onClose: () => void;
   onUpgraded?: () => void;
+  emotionalMessage?: string;
 }
 
-export default function ProGate({ feature, used, limit, onClose }: ProGateProps) {
+export default function ProGate({ feature, used, limit, onClose, emotionalMessage }: ProGateProps) {
   const { user } = useStore();
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -80,12 +81,23 @@ export default function ProGate({ feature, used, limit, onClose }: ProGateProps)
           </div>
         </div>
 
-        {/* Limit reached notice */}
-        <div className="bg-red-500/10 border border-red-500/20 rounded-xl p-3 mb-4">
-          <p className="text-red-400 text-sm font-semibold">Daily limit reached</p>
-          <p className="text-gray-400 text-xs mt-1">
-            You've used {used}/{limit} free {feature} today. Upgrade to Pro for unlimited access.
-          </p>
+        {/* Context message */}
+        <div className="bg-gradient-to-r from-purple-500/10 to-indigo-500/10 border border-purple-500/20 rounded-xl p-3 mb-4">
+          {emotionalMessage ? (
+            <>
+              <p className="text-white text-sm font-bold">{emotionalMessage}</p>
+              <p className="text-gray-400 text-xs mt-1">
+                You've created {used} today — upgrade to keep the momentum going.
+              </p>
+            </>
+          ) : (
+            <>
+              <p className="text-white text-sm font-bold">You're on a roll 🚀</p>
+              <p className="text-gray-400 text-xs mt-1">
+                You've used {used}/{limit} free {feature} today. Upgrade to Pro for unlimited access.
+              </p>
+            </>
+          )}
         </div>
 
         {/* Features */}

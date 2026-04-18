@@ -1,6 +1,7 @@
 import { useState, useRef, useMemo } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { ArrowLeft, Sparkles, Download, Copy, Check, Play, Pause, FileText, Mic, Loader2, Upload, Film, X, Flame } from 'lucide-react';
+import { ArrowLeft, Sparkles, Download, Copy, Check, Play, Pause, FileText, Mic, Loader2, Upload, Film, X, Flame, Video, Lock } from 'lucide-react';
+import VideoGenerator from './VideoGenerator';
 import { useStore } from '../store/useStore';
 import { speakText, stopSpeaking, downloadScript, type VoiceStyle } from '../lib/ttsService';
 import { canUseFeature, trackUsageWithServer } from '../lib/subscription';
@@ -19,7 +20,7 @@ const EXPORT_PRESETS: Record<ExportFormat, { label: string; icon: string; durati
 
 export default function CreatorStudio() {
   const { selectedNews: news, setView, isPlaying, setPlaying, addReel, user, prefilledHook, setPrefilledHook } = useStore();
-  const [activeTab, setActiveTab] = useState<'script' | 'voiceover' | 'upload'>('script');
+  const [activeTab, setActiveTab] = useState<'script' | 'voiceover' | 'upload' | 'video'>(prefilledHook ? 'video' : 'script');
   const [format, setFormat] = useState<ExportFormat>('youtube-short');
   const [copied, setCopied] = useState(false);
   const [voiceStyle, setVoiceStyle] = useState<VoiceStyle>('professional');
@@ -76,9 +77,17 @@ export default function CreatorStudio() {
   }, [news?.trendAnalysis, format, prefilledHook, fullScriptText]);
 
   const handleCopy = (text: string) => {
+    // Gate: check script export limit
+    const check = canUseFeature('scripts');
+    if (!check.allowed) {
+      setShowProGate({ feature: 'script exports', used: check.used, limit: check.limit });
+      return;
+    }
     navigator.clipboard.writeText(text);
     setCopied(true);
     setTimeout(() => setCopied(false), 2000);
+    // Track usage
+    if (user) trackUsageWithServer(user.id, 'scripts').catch(() => {});
   };
 
   const handlePlayVoiceover = () => {
@@ -93,7 +102,14 @@ export default function CreatorStudio() {
 
   const handleDownloadScript = () => {
     if (exportData?.script) {
+      // Gate: check script export limit
+      const check = canUseFeature('scripts');
+      if (!check.allowed) {
+        setShowProGate({ feature: 'script exports', used: check.used, limit: check.limit });
+        return;
+      }
       downloadScript(exportData.script, `trendsense-${format}`);
+      if (user) trackUsageWithServer(user.id, 'scripts').catch(() => {});
     }
   };
 
@@ -108,11 +124,6 @@ export default function CreatorStudio() {
 
   const handleUploadReel = async () => {
     if (!videoFile || !news || !user) return;
-    const check = canUseFeature('reelUploads');
-    if (!check.allowed) {
-      setShowProGate({ feature: 'reel uploads', used: check.used, limit: check.limit });
-      return;
-    }
     setIsUploading(true);
 
     let videoUrl = videoPreviewUrl || URL.createObjectURL(videoFile);
@@ -147,7 +158,6 @@ export default function CreatorStudio() {
     };
 
     addReel(reel);
-    if (user) await trackUsageWithServer(user.id, 'reelUploads');
 
     setIsUploading(false);
     setUploadSuccess(true);
@@ -194,6 +204,7 @@ export default function CreatorStudio() {
       used={showProGate.used}
       limit={showProGate.limit}
       onClose={() => setShowProGate(null)}
+      emotionalMessage="🔥 This script could go viral — unlock unlimited exports"
     />
   );
 
@@ -230,7 +241,8 @@ export default function CreatorStudio() {
           {[
             { id: 'script' as const, label: 'Script', icon: FileText },
             { id: 'voiceover' as const, label: 'Voiceover', icon: Mic },
-            { id: 'upload' as const, label: 'Upload Reel', icon: Upload },
+            { id: 'video' as const, label: 'Video', icon: Video },
+            { id: 'upload' as const, label: 'Upload', icon: Upload },
           ].map(tab => (
             <button
               key={tab.id}
@@ -369,30 +381,70 @@ export default function CreatorStudio() {
 
                       {/* Copy buttons */}
                       <div className="flex items-center gap-3 pt-2">
-                        <button
-                          onClick={() => handleCopy(exportData.script)}
-                          className="flex-1 flex items-center justify-center gap-2 py-3 rounded-xl bg-white/10 text-white font-medium text-sm hover:bg-white/15 transition-all"
-                        >
-                          {copied ? <Check className="w-4 h-4 text-green-400" /> : <Copy className="w-4 h-4" />}
-                          {copied ? 'Copied!' : 'Copy Script'}
-                        </button>
-                        <button
-                          onClick={() => handleCopy(exportData.caption)}
-                          className="flex-1 flex items-center justify-center gap-2 py-3 rounded-xl bg-purple-500/20 text-purple-300 font-medium text-sm hover:bg-purple-500/30 transition-all border border-purple-500/20"
-                        >
-                          <Copy className="w-4 h-4" />
-                          Copy Caption
-                        </button>
+                        {(() => {
+                          const scriptCheck = canUseFeature('scripts');
+                          const isLocked = !scriptCheck.allowed;
+                          return (
+                            <>
+                              <button
+                                onClick={() => handleCopy(exportData.script)}
+                                className={`flex-1 flex items-center justify-center gap-2 py-3 rounded-xl font-medium text-sm transition-all ${
+                                  isLocked
+                                    ? 'bg-amber-500/15 text-amber-300 border border-amber-500/20'
+                                    : 'bg-white/10 text-white hover:bg-white/15'
+                                }`}
+                              >
+                                {copied ? <Check className="w-4 h-4 text-green-400" /> : isLocked ? <Lock className="w-4 h-4" /> : <Copy className="w-4 h-4" />}
+                                {copied ? 'Copied!' : isLocked ? 'Unlock Copy' : 'Copy Script'}
+                              </button>
+                              <button
+                                onClick={() => handleCopy(exportData.caption)}
+                                className={`flex-1 flex items-center justify-center gap-2 py-3 rounded-xl font-medium text-sm transition-all border ${
+                                  isLocked
+                                    ? 'bg-amber-500/15 text-amber-300 border-amber-500/20'
+                                    : 'bg-purple-500/20 text-purple-300 border-purple-500/20 hover:bg-purple-500/30'
+                                }`}
+                              >
+                                {isLocked ? <Lock className="w-4 h-4" /> : <Copy className="w-4 h-4" />}
+                                {isLocked ? 'Unlock Copy' : 'Copy Caption'}
+                              </button>
+                            </>
+                          );
+                        })()}
                       </div>
 
+                      {/* Limit indicator */}
+                      {(() => {
+                        const scriptCheck = canUseFeature('scripts');
+                        return !scriptCheck.allowed ? (
+                          <p className="text-center text-xs text-amber-400/80">
+                            Daily export limit reached ({scriptCheck.used}/{scriptCheck.limit})
+                          </p>
+                        ) : (
+                          <p className="text-center text-xs text-gray-600">
+                            {scriptCheck.limit - scriptCheck.used} free export{scriptCheck.limit - scriptCheck.used !== 1 ? 's' : ''} remaining today
+                          </p>
+                        );
+                      })()}
+
                       {/* Download */}
-                      <button
-                        onClick={handleDownloadScript}
-                        className="w-full flex items-center justify-center gap-2 py-3 rounded-xl border border-white/10 text-gray-400 font-medium text-sm hover:text-white hover:border-white/20 transition-all"
-                      >
-                        <Download className="w-4 h-4" />
-                        Download Script
-                      </button>
+                      {(() => {
+                        const dlCheck = canUseFeature('scripts');
+                        const isLocked = !dlCheck.allowed;
+                        return (
+                          <button
+                            onClick={handleDownloadScript}
+                            className={`w-full flex items-center justify-center gap-2 py-3 rounded-xl border font-medium text-sm transition-all ${
+                              isLocked
+                                ? 'border-amber-500/20 text-amber-300 bg-amber-500/10 hover:bg-amber-500/15'
+                                : 'border-white/10 text-gray-400 hover:text-white hover:border-white/20'
+                            }`}
+                          >
+                            {isLocked ? <Lock className="w-4 h-4" /> : <Download className="w-4 h-4" />}
+                            {isLocked ? 'Unlock Download' : 'Download Script'}
+                          </button>
+                        );
+                      })()}
                     </div>
                   )}
                 </>
@@ -511,6 +563,18 @@ export default function CreatorStudio() {
                   </button>
                 </>
               )}
+            </motion.div>
+          )}
+
+          {/* ═══ VIDEO TAB ═══ */}
+          {activeTab === 'video' && (
+            <motion.div
+              key="video"
+              initial={{ opacity: 0, y: 10 }}
+              animate={{ opacity: 1, y: 0 }}
+              exit={{ opacity: 0, y: -10 }}
+            >
+              <VideoGenerator />
             </motion.div>
           )}
 

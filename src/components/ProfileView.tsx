@@ -87,10 +87,9 @@ export default function ProfileView() {
           <h3 className="text-xs text-gray-600 uppercase tracking-wider mb-3">Today's Usage</h3>
           <div className="space-y-3">
             {([
-              { label: 'AI Scripts', key: 'scripts' as const, color: 'bg-purple-500' },
+              { label: 'Script Exports', key: 'scripts' as const, color: 'bg-purple-500' },
+              { label: 'Videos Generated', key: 'videoGenerations' as const, color: 'bg-orange-500' },
               { label: 'Narrations', key: 'narrations' as const, color: 'bg-blue-500' },
-              { label: 'Reel Uploads', key: 'reelUploads' as const, color: 'bg-pink-500' },
-              { label: 'Explanations', key: 'explanations' as const, color: 'bg-green-500' },
             ]).map(item => {
               const used = usage[item.key];
               const limit = userIsPro ? Infinity : FREE_LIMITS[item.key];

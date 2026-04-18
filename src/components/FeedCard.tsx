@@ -4,7 +4,6 @@ import { Bookmark, BookmarkCheck, Share2, ChevronUp, Volume2, VolumeX, Sparkles,
 import { useStore } from '../store/useStore';
 import { speakText, stopSpeaking } from '../lib/ttsService';
 import { generateNarrationScript } from '../lib/aiService';
-import { canUseFeature, trackUsageWithServer } from '../lib/subscription';
 import ProGate from './ProGate';
 import type { NewsItem } from '../types';
 import { formatDistanceToNow } from 'date-fns';
@@ -47,17 +46,11 @@ export default function FeedCard({ news, index, isActive }: FeedCardProps) {
     // Use cached narration, or generate one
     let narration = news.narrationScript;
     if (!narration) {
-      const check = canUseFeature('narrations');
-      if (!check.allowed) {
-        setShowProGate({ feature: 'audio narrations', used: check.used, limit: check.limit });
-        return;
-      }
       setIsLoadingAudio(true);
       try {
         narration = await generateNarrationScript(news);
         const updated = { ...news, narrationScript: narration };
         updateNewsItem(updated);
-        if (user) await trackUsageWithServer(user.id, 'narrations');
       } catch {
         // Fallback to description if AI fails
         narration = news.trendAnalysis?.whatsGoingOn || news.explanation || news.description;

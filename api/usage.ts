@@ -6,10 +6,9 @@ const SUPABASE_URL = process.env.SUPABASE_URL || '';
 const SUPABASE_SERVICE_KEY = process.env.SUPABASE_SERVICE_ROLE_KEY || '';
 
 const FREE_LIMITS: Record<string, number> = {
-  scripts: 5,
+  scripts: 3,
   narrations: 3,
-  reel_uploads: 2,
-  explanations: 10,
+  video_generations: 1,
 };
 
 export default async function handler(req: VercelRequest, res: VercelResponse) {
@@ -42,12 +41,12 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     // Get today's usage
     const { data: usage } = await supabase
       .from('usage_tracking')
-      .select('scripts, narrations, reel_uploads, explanations')
+      .select('scripts, narrations, video_generations')
       .eq('user_id', userId)
       .eq('usage_date', today)
       .single();
 
-    const currentUsage = usage || { scripts: 0, narrations: 0, reel_uploads: 0, explanations: 0 };
+    const currentUsage = usage || { scripts: 0, narrations: 0, video_generations: 0 };
 
     return res.status(200).json({
       isPro,
@@ -63,7 +62,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     const userId = authUserId;
     if (!type) return res.status(400).json({ error: 'Missing type' });
 
-    const validTypes = ['scripts', 'narrations', 'reel_uploads', 'explanations'];
+    const validTypes = ['scripts', 'narrations', 'video_generations'];
     if (!validTypes.includes(type)) {
       return res.status(400).json({ error: `Invalid type. Must be: ${validTypes.join(', ')}` });
     }

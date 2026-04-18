@@ -1,11 +1,13 @@
 import { useEffect, useState } from 'react';
-import { motion } from 'framer-motion';
-import { ArrowLeft, Volume2, VolumeX, Bookmark, BookmarkCheck, Share2, ExternalLink, Clock, TrendingUp, Loader2, Copy, Check, Zap, Flame } from 'lucide-react';
+import { motion, AnimatePresence } from 'framer-motion';
+import { ArrowLeft, Volume2, VolumeX, Bookmark, BookmarkCheck, Share2, ExternalLink, Clock, TrendingUp, Loader2, Copy, Check, Zap, Flame, Video, Download, Lock } from 'lucide-react';
 import { useStore } from '../store/useStore';
-import { speakText, stopSpeaking } from '../lib/ttsService';
+import { speakText, stopSpeaking, fetchAudioBlob, downloadBlob } from '../lib/ttsService';
 import { generateTrendAnalysis, generateNarrationScript } from '../lib/aiService';
+import { canUseFeature, trackUsageWithServer } from '../lib/subscription';
 import { formatDistanceToNow } from 'date-fns';
 import ReelCarousel from './ReelCarousel';
+import ProGate from './ProGate';
 
 export default function DetailView() {
   const { selectedNews: news, setView, setSelectedNews, updateNewsItem, isPlaying, currentAudioId, setPlaying, user, toggleSaved, setCreatorMode, setPrefilledHook } = useStore();
@@ -14,7 +16,10 @@ export default function DetailView() {
   const [isEnriching, setIsEnriching] = useState(false);
   const [enrichError, setEnrichError] = useState<string | null>(null);
   const [isLoadingAudio, setIsLoadingAudio] = useState(false);
+  const [isDownloadingAudio, setIsDownloadingAudio] = useState(false);
   const [copiedHook, setCopiedHook] = useState<number | null>(null);
+  const [hookActionTarget, setHookActionTarget] = useState<string | null>(null);
+  const [showProGate, setShowProGate] = useState<{ feature: string; used: number; limit: number } | null>(null);
   const isCurrentPlaying = isPlaying && currentAudioId === news?.id;
   const isSaved = user?.savedStories.includes(news?.id || '') || false;
 
@@ -26,6 +31,7 @@ export default function DetailView() {
   }, []);
 
   // Enrich article with AI-generated trend analysis if missing
+  // FREE and unlimited — this is the engagement hook.
   useEffect(() => {
     if (news && !news.trendAnalysis) {
       setIsEnriching(true);
@@ -73,6 +79,44 @@ export default function DetailView() {
     setPlaying(true, news.id);
   };
 
+  const handleDownloadAudio = async () => {
+    // Gate: check narration download limit
+    const check = canUseFeature('narrations');
+    if (!check.allowed) {
+      setShowProGate({ feature: 'audio downloads', used: check.used, limit: check.limit });
+      return;
+    }
+
+    // Generate narration text if not cached
+    let narration = news.narrationScript;
+    if (!narration) {
+      setIsDownloadingAudio(true);
+      try {
+        narration = await generateNarrationScript(news);
+        const enriched = { ...news, narrationScript: narration };
+        setSelectedNews(enriched);
+        updateNewsItem(enriched);
+      } catch {
+        narration = `${news.title}. ${news.trendAnalysis?.whatsGoingOn || news.description}`;
+      }
+    } else {
+      setIsDownloadingAudio(true);
+    }
+
+    // Fetch audio blob and trigger download
+    try {
+      const blob = await fetchAudioBlob(narration);
+      downloadBlob(blob, `trendsense-narration-${Date.now()}.mp3`);
+      // Track usage after successful download
+      if (user) {
+        trackUsageWithServer(user.id, 'narrations').catch(() => {});
+      }
+    } catch {
+      // Silently fail — user can retry
+    }
+    setIsDownloadingAudio(false);
+  };
+
   const handleCreator = () => {
     setPrefilledHook(null);
     setCreatorMode(true);
@@ -80,6 +124,11 @@ export default function DetailView() {
   };
 
   const handleHookTap = (hook: string) => {
+    setHookActionTarget(hook);
+  };
+
+  const handleHookToVideo = (hook: string) => {
+    setHookActionTarget(null);
     setPrefilledHook(hook);
     setCreatorMode(true);
     setView('creator');
@@ -102,6 +151,16 @@ export default function DetailView() {
   };
 
   return (
+    <>
+    {showProGate && (
+      <ProGate
+        feature={showProGate.feature}
+        used={showProGate.used}
+        limit={showProGate.limit}
+        onClose={() => setShowProGate(null)}
+        emotionalMessage="🎙️ Download this narration to use in your reel"
+      />
+    )}
     <motion.div
       initial={{ opacity: 0, y: '100%' }}
       animate={{ opacity: 1, y: 0 }}
@@ -186,7 +245,34 @@ export default function DetailView() {
               <><Volume2 className="w-4 h-4" /> Listen</>
             )}
           </button>
+          <button
+            onClick={handleDownloadAudio}
+            disabled={isDownloadingAudio}
+            className={`flex items-center gap-2 px-4 py-2.5 rounded-full font-semibold text-sm transition-all ${
+              isDownloadingAudio
+                ? 'bg-white/10 text-white/50'
+                : !canUseFeature('narrations').allowed
+                ? 'bg-amber-500/15 text-amber-300 border border-amber-500/20 hover:bg-amber-500/25'
+                : 'bg-white/10 text-white hover:bg-white/15'
+            }`}
+          >
+            {isDownloadingAudio ? (
+              <><Loader2 className="w-4 h-4 animate-spin" /> Downloading...</>
+            ) : !canUseFeature('narrations').allowed ? (
+              <><Lock className="w-4 h-4" /> Download Audio</>
+            ) : (
+              <><Download className="w-4 h-4" /> Download Audio</>
+            )}
+          </button>
         </div>
+        {(() => {
+          const audioCheck = canUseFeature('narrations');
+          return audioCheck.used > 0 && !audioCheck.allowed ? (
+            <p className="text-xs text-amber-400/80 mb-4 -mt-4">Audio download limit reached ({audioCheck.used}/{audioCheck.limit})</p>
+          ) : audioCheck.used > 0 ? (
+            <p className="text-xs text-gray-600 mb-4 -mt-4">{audioCheck.limit - audioCheck.used} free audio download{audioCheck.limit - audioCheck.used !== 1 ? 's' : ''} remaining today</p>
+          ) : null;
+        })()}
 
         {/* Loading state */}
         {isEnriching && (
@@ -333,6 +419,86 @@ export default function DetailView() {
           </div>
         </div>
       </div>
+
+      {/* Hook action bottom sheet */}
+      <AnimatePresence>
+        {hookActionTarget && (
+          <motion.div
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            className="fixed inset-0 z-[60] bg-black/60 backdrop-blur-sm flex items-end justify-center"
+            onClick={() => setHookActionTarget(null)}
+          >
+            <motion.div
+              initial={{ y: '100%' }}
+              animate={{ y: 0 }}
+              exit={{ y: '100%' }}
+              transition={{ type: 'spring', damping: 25, stiffness: 200 }}
+              className="w-full max-w-lg bg-[#141418] border-t border-white/10 rounded-t-3xl p-6 space-y-4"
+              onClick={(e) => e.stopPropagation()}
+            >
+              <div className="w-10 h-1 bg-white/20 rounded-full mx-auto mb-2" />
+              <p className="text-white font-bold text-sm line-clamp-2">"{hookActionTarget}"</p>
+
+              <button
+                onClick={() => handleHookToVideo(hookActionTarget)}
+                className="w-full flex items-center gap-3 p-4 rounded-2xl bg-gradient-to-r from-orange-500/15 to-pink-500/15 border border-orange-500/20 hover:border-orange-500/40 transition-all"
+              >
+                <div className="w-10 h-10 rounded-full bg-orange-500/20 flex items-center justify-center">
+                  <Video className="w-5 h-5 text-orange-400" />
+                </div>
+                <div className="text-left">
+                  <p className="text-white font-semibold text-sm">Use as Video Hook</p>
+                  <p className="text-gray-500 text-xs">Generate a viral video with this hook</p>
+                </div>
+              </button>
+
+              <button
+                onClick={() => {
+                  setHookActionTarget(null);
+                  setPrefilledHook(hookActionTarget);
+                  setCreatorMode(true);
+                  setView('creator');
+                }}
+                className="w-full flex items-center gap-3 p-4 rounded-2xl bg-white/[0.03] border border-white/10 hover:border-purple-500/30 transition-all"
+              >
+                <div className="w-10 h-10 rounded-full bg-purple-500/20 flex items-center justify-center">
+                  <Flame className="w-5 h-5 text-purple-400" />
+                </div>
+                <div className="text-left">
+                  <p className="text-white font-semibold text-sm">Open in Creator Studio</p>
+                  <p className="text-gray-500 text-xs">Edit script, voiceover, export</p>
+                </div>
+              </button>
+
+              <button
+                onClick={() => {
+                  navigator.clipboard.writeText(hookActionTarget);
+                  setHookActionTarget(null);
+                }}
+                className="w-full flex items-center gap-3 p-4 rounded-2xl bg-white/[0.03] border border-white/10 hover:border-white/20 transition-all"
+              >
+                <div className="w-10 h-10 rounded-full bg-white/10 flex items-center justify-center">
+                  <Copy className="w-5 h-5 text-gray-400" />
+                </div>
+                <div className="text-left">
+                  <p className="text-white font-semibold text-sm">Copy to Clipboard</p>
+                  <p className="text-gray-500 text-xs">Copy hook text</p>
+                </div>
+              </button>
+
+              <button
+                onClick={() => setHookActionTarget(null)}
+                className="w-full py-3 text-center text-gray-500 text-sm"
+              >
+                Cancel
+              </button>
+            </motion.div>
+          </motion.div>
+        )}
+      </AnimatePresence>
     </motion.div>
+    </>
   );
 }

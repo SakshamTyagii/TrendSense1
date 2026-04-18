@@ -27,7 +27,7 @@ const STYLE_CONFIG: Record<string, {
 
 function sanitizeText(text: string): string {
   return text
-    .replace(/[<>&'"]/g, ' ')
+    .replace(/[<>&"]/g, ' ')
     .replace(/[\x00-\x08\x0B\x0C\x0E-\x1F]/g, '')
     .slice(0, 5000);
 }

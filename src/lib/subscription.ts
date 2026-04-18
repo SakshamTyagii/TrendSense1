@@ -18,27 +18,24 @@ interface DailyUsage {
   date: string;
   scripts: number;
   narrations: number;
-  reelUploads: number;
-  explanations: number;
+  videoGenerations: number;
 }
 
 export const FREE_LIMITS: Record<string, number> = {
-  scripts: 5,
+  scripts: 3,
   narrations: 3,
-  reelUploads: 2,
-  explanations: 10,
+  videoGenerations: 1,
 };
 
 export const PRO_PRICE = '₹33/mo';
 export const PRO_PRICE_ORIGINAL = '₹99/mo';
 export const PRO_FEATURES = [
-  'Unlimited AI script generation',
-  'Unlimited audio narrations',
-  'Unlimited reel uploads',
-  'All 4 content formats',
-  'Full creator insights & analytics',
+  'Unlimited script exports',
+  'Unlimited video generation & download',
+  'Unlimited audio downloads',
+  'All creator formats',
   'Priority AI (no rate limits)',
-  'HD audio export',
+  'Premium video styles (coming soon)',
 ];
 
 function today(): string {
@@ -55,7 +52,7 @@ function getCachedUsage(): DailyUsage {
       if (usage.date === today()) return usage;
     }
   } catch { /* ignore */ }
-  return { date: today(), scripts: 0, narrations: 0, reelUploads: 0, explanations: 0 };
+  return { date: today(), scripts: 0, narrations: 0, videoGenerations: 0 };
 }
 
 function saveCachedUsage(usage: DailyUsage): void {
@@ -96,8 +93,7 @@ export async function syncUsageFromServer(_userId: string): Promise<void> {
         date: today(),
         scripts: data.usage.scripts || 0,
         narrations: data.usage.narrations || 0,
-        reelUploads: data.usage.reel_uploads || 0,
-        explanations: data.usage.explanations || 0,
+        videoGenerations: data.usage.video_generations || 0,
       });
     }
   } catch { /* continue with cached data */ }
@@ -114,7 +110,7 @@ export function isPro(): boolean {
   return sub.tier === 'pro' && (sub.status === 'active' || sub.status === 'trialing');
 }
 
-export type UsageType = 'scripts' | 'narrations' | 'reelUploads' | 'explanations';
+export type UsageType = 'scripts' | 'narrations' | 'videoGenerations';
 
 export function canUseFeature(type: UsageType): { allowed: boolean; used: number; limit: number } {
   if (isPro()) return { allowed: true, used: 0, limit: Infinity };
@@ -145,7 +141,7 @@ export async function trackUsageWithServer(userId: string, type: UsageType): Pro
 
 export async function trackUsageOnServer(_userId: string, type: string): Promise<void> {
   // Map client-side type names to server column names
-  const serverType = type === 'reelUploads' ? 'reel_uploads' : type;
+  const serverType = type === 'videoGenerations' ? 'video_generations' : type;
   try {
     const res = await apiFetch('/api/usage', {
       method: 'POST',

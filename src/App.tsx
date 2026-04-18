@@ -1,7 +1,8 @@
-import { lazy, Suspense, useEffect } from 'react';
+import { lazy, Suspense, useEffect, useState } from 'react';
 import { Routes, Route, useNavigate, useLocation } from 'react-router-dom';
 import { AnimatePresence } from 'framer-motion';
 import { useStore } from './store/useStore';
+import { syncUsageFromServer } from './lib/subscription';
 import HomeFeed from './components/HomeFeed';
 import BottomNav from './components/BottomNav';
 import CategoryBar from './components/CategoryBar';
@@ -22,14 +23,34 @@ function LoadingFallback() {
 }
 
 export default function App() {
-  const { isAuthenticated, isAuthLoading, currentView, setView, initAuth } = useStore();
+  const { isAuthenticated, isAuthLoading, currentView, setView, initAuth, user } = useStore();
   const navigate = useNavigate();
   const location = useLocation();
+  const [checkoutToast, setCheckoutToast] = useState<string | null>(null);
 
   // Initialize Supabase auth on mount (checks session, listens for changes)
   useEffect(() => {
     initAuth();
   }, []);
+
+  // Handle Stripe checkout return
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    const checkout = params.get('checkout');
+    if (checkout === 'success') {
+      setCheckoutToast('Welcome to Pro! \ud83c\udf89 Unlimited access unlocked.');
+      // Sync subscription from server so isPro() returns true immediately
+      if (user) {
+        syncUsageFromServer(user.id).catch(() => {});
+      }
+      window.history.replaceState({}, '', '/');
+      setTimeout(() => setCheckoutToast(null), 5000);
+    } else if (checkout === 'canceled') {
+      setCheckoutToast('Checkout canceled. You can upgrade anytime.');
+      window.history.replaceState({}, '', '/');
+      setTimeout(() => setCheckoutToast(null), 4000);
+    }
+  }, [user]);
 
   // Sync Zustand currentView → URL
   useEffect(() => {
@@ -74,6 +95,12 @@ export default function App() {
 
   return (
     <div className="bg-black min-h-screen">
+      {/* Checkout toast */}
+      {checkoutToast && (
+        <div className="fixed top-4 left-1/2 -translate-x-1/2 z-[200] px-5 py-3 rounded-xl bg-gradient-to-r from-amber-500 to-orange-500 text-white text-sm font-bold shadow-lg shadow-amber-500/30 animate-pulse">
+          {checkoutToast}
+        </div>
+      )}
       <Suspense fallback={<LoadingFallback />}>
         <Routes>
           {/* Public route — login */}
