@@ -49,6 +49,7 @@ export default function SearchView() {
       initial={{ opacity: 0 }}
       animate={{ opacity: 1 }}
       className="fixed inset-0 z-40 bg-[#0a0a0f] overflow-y-auto"
+      style={{ paddingBottom: 'var(--bottom-offset)' }}
     >
       {/* Search header */}
       <div className="sticky top-0 z-10 bg-[#0a0a0f]/90 backdrop-blur-xl p-4 border-b border-white/5">
@@ -94,6 +95,7 @@ export default function SearchView() {
                   key={news.id}
                   initial={{ opacity: 0, y: 10 }}
                   animate={{ opacity: 1, y: 0 }}
+                  whileTap={{ scale: 0.97 }}
                   transition={{ delay: i * 0.05 }}
                   onClick={() => handleSelectNews(news)}
                   className="w-full flex items-start gap-3 p-3 rounded-xl bg-white/5 hover:bg-white/10 transition-all text-left"

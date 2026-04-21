@@ -12,20 +12,25 @@ export default function CategoryBar() {
 
   return (
     <div
-      ref={scrollRef}
-      className="fixed top-0 left-0 right-0 z-20 bg-gradient-to-b from-black/80 to-transparent pt-[max(1rem,env(safe-area-inset-top))] pb-3"
+      className="fixed top-0 left-0 right-0 z-20 bg-gradient-to-b from-black via-black/90 to-transparent"
+      style={{ paddingTop: 'max(0.75rem, env(safe-area-inset-top))' }}
     >
-      <div className="flex items-center gap-2 px-4 overflow-x-auto scrollbar-hide" style={{ scrollbarWidth: 'none' }}>
+      <div
+        ref={scrollRef}
+        className="flex items-center gap-2 px-4 pb-3 overflow-x-auto scrollbar-hide snap-x-mandatory"
+        style={{ scrollbarWidth: 'none' }}
+      >
         {allCategories.map(cat => {
           const isActive = selectedCategory === cat.id;
           return (
-            <button
+            <motion.button
               key={cat.label}
               onClick={() => setCategory(cat.id)}
-              className={`relative flex-shrink-0 px-4 py-1.5 rounded-full text-xs font-semibold transition-all ${
+              whileTap={{ scale: 0.92 }}
+              className={`relative flex-shrink-0 px-4 py-1.5 rounded-full text-xs font-semibold transition-all duration-200 snap-center ${
                 isActive
                   ? 'text-white'
-                  : 'text-gray-400 hover:text-gray-200'
+                  : 'text-gray-400 active:text-gray-200'
               }`}
             >
               {isActive && (
@@ -36,7 +41,7 @@ export default function CategoryBar() {
                 />
               )}
               <span className="relative z-10">{cat.label}</span>
-            </button>
+            </motion.button>
           );
         })}
       </div>

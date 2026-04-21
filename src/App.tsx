@@ -108,17 +108,12 @@ export default function App() {
 
           {/* Main feed — public for crawlers, functional for logged-in users */}
           <Route path="/" element={
-            <>
-              {!isAuthenticated ? (
-                <AuthScreen />
-              ) : (
-                <>
-                  <CategoryBar />
-                  <HomeFeed />
-                  <BottomNav />
-                </>
-              )}
-            </>
+            !isAuthenticated ? <AuthScreen /> : (
+              <>
+                <CategoryBar />
+                <HomeFeed />
+              </>
+            )
           } />
 
           {/* Protected routes */}
@@ -131,12 +126,9 @@ export default function App() {
           } />
           <Route path="/search" element={
             isAuthenticated ? (
-              <>
-                <AnimatePresence>
-                  <SearchView key="search" />
-                </AnimatePresence>
-                <BottomNav />
-              </>
+              <AnimatePresence>
+                <SearchView key="search" />
+              </AnimatePresence>
             ) : <AuthScreen />
           } />
           <Route path="/profile" element={
@@ -160,12 +152,14 @@ export default function App() {
               <>
                 <CategoryBar />
                 <HomeFeed />
-                <BottomNav />
               </>
             )
           } />
         </Routes>
       </Suspense>
+
+      {/* Persistent bottom nav — visible on ALL authenticated screens */}
+      {isAuthenticated && <BottomNav />}
     </div>
   );
 }

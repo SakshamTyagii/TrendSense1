@@ -115,13 +115,13 @@ export default function FeedCard({ news, index, isActive }: FeedCardProps) {
       </div>
 
       {/* Content overlay */}
-      <div className="relative z-10 h-full flex flex-col justify-end pb-24 px-5">
+      <div className="relative z-10 h-full flex flex-col justify-end px-5 sm:px-6 pb-36">
         {/* Category + Trend Score */}
         <motion.div
           initial={{ opacity: 0, y: 10 }}
           animate={{ opacity: 1, y: 0 }}
           transition={{ delay: isActive ? 0.2 : 0 }}
-          className="flex items-center gap-2 mb-3"
+          className="flex flex-wrap items-center gap-2 mb-3"
         >
           <span className={`text-xs font-bold uppercase tracking-wider px-3 py-1 rounded-full bg-gradient-to-r ${categoryColors[news.category]} text-white`}>
             {news.category}
@@ -147,7 +147,7 @@ export default function FeedCard({ news, index, isActive }: FeedCardProps) {
           initial={{ opacity: 0, y: 15 }}
           animate={{ opacity: 1, y: 0 }}
           transition={{ delay: isActive ? 0.3 : 0 }}
-          className="text-2xl sm:text-3xl font-black text-white leading-tight mb-3 max-w-lg"
+          className="text-2xl sm:text-3xl font-black text-white leading-tight mb-3 max-w-lg line-clamp-3"
         >
           {news.title}
         </motion.h2>
@@ -180,12 +180,13 @@ export default function FeedCard({ news, index, isActive }: FeedCardProps) {
           initial={{ opacity: 0, y: 10 }}
           animate={{ opacity: 1, y: 0 }}
           transition={{ delay: isActive ? 0.6 : 0 }}
-          className="flex items-center gap-3"
+          className="flex items-center gap-2"
         >
-          <button
+          <motion.button
+            whileTap={{ scale: 0.95 }}
             onClick={handlePlayAudio}
             disabled={isLoadingAudio}
-            className={`flex items-center gap-2 px-5 py-2.5 rounded-full font-semibold text-sm transition-all ${
+            className={`flex items-center gap-1.5 px-3.5 py-2.5 rounded-full font-semibold text-sm min-h-[44px] transition-all whitespace-nowrap ${
               isCurrentPlaying
                 ? 'bg-indigo-500 text-white shadow-lg shadow-indigo-500/30'
                 : isLoadingAudio
@@ -194,35 +195,38 @@ export default function FeedCard({ news, index, isActive }: FeedCardProps) {
             }`}
           >
             {isLoadingAudio ? (
-              <><Loader2 className="w-4 h-4 animate-spin" /> Loading...</>    
+              <><Loader2 className="w-4 h-4 animate-spin" /></>    
             ) : isCurrentPlaying ? (
               <><VolumeX className="w-4 h-4" /> Stop</>    
             ) : (
               <><Volume2 className="w-4 h-4" /> Listen</>    
             )}
-          </button>
+          </motion.button>
 
-          <button
+          <motion.button
+            whileTap={{ scale: 0.95 }}
             onClick={handleExpand}
-            className="flex items-center gap-2 px-5 py-2.5 rounded-full bg-white/15 text-white backdrop-blur-sm hover:bg-white/25 font-semibold text-sm transition-all"
+            className="flex items-center gap-1.5 px-3.5 py-2.5 rounded-full bg-white/15 text-white backdrop-blur-sm hover:bg-white/25 font-semibold text-sm min-h-[44px] transition-all whitespace-nowrap"
           >
             <ChevronUp className="w-4 h-4" />
-            Full Story
-          </button>
+            Story
+          </motion.button>
 
-          <button
+          <motion.button
+            whileTap={{ scale: 0.95 }}
             onClick={handleCreator}
-            className="flex items-center gap-2 px-5 py-2.5 rounded-full bg-gradient-to-r from-purple-500 to-pink-500 text-white font-semibold text-sm shadow-lg shadow-purple-500/20 hover:shadow-purple-500/40 transition-all"
+            className="flex items-center gap-1.5 px-3.5 py-2.5 rounded-full bg-gradient-to-r from-purple-500 to-pink-500 text-white font-semibold text-sm min-h-[44px] shadow-lg shadow-purple-500/20 hover:shadow-purple-500/40 transition-all whitespace-nowrap"
           >
             <Sparkles className="w-4 h-4" />
             Create
-          </button>
+          </motion.button>
         </motion.div>
       </div>
 
       {/* Side actions */}
-      <div className="absolute right-4 bottom-32 flex flex-col items-center gap-5 z-20">
-        <button
+      <div className="absolute right-4 flex flex-col items-center gap-5 z-20" style={{ bottom: 'calc(var(--bottom-offset) + 3rem)' }}>
+        <motion.button
+          whileTap={{ scale: 0.9 }}
           onClick={() => toggleSaved(news.id)}
           className="flex flex-col items-center gap-1"
         >
@@ -232,14 +236,15 @@ export default function FeedCard({ news, index, isActive }: FeedCardProps) {
             <Bookmark className="w-7 h-7 text-white/70 hover:text-white transition-colors" />
           )}
           <span className="text-[10px] text-white/50">Save</span>
-        </button>
-        <button
+        </motion.button>
+        <motion.button
+          whileTap={{ scale: 0.9 }}
           onClick={handleShare}
           className="flex flex-col items-center gap-1"
         >
           <Share2 className="w-7 h-7 text-white/70 hover:text-white transition-colors" />
           <span className="text-[10px] text-white/50">Share</span>
-        </button>
+        </motion.button>
       </div>
 
       {/* Scroll indicator */}
@@ -248,7 +253,8 @@ export default function FeedCard({ news, index, isActive }: FeedCardProps) {
           initial={{ opacity: 0 }}
           animate={{ opacity: 1 }}
           transition={{ delay: 2 }}
-          className="absolute bottom-6 left-1/2 -translate-x-1/2 flex flex-col items-center gap-1 z-20"
+          className="absolute left-1/2 -translate-x-1/2 flex flex-col items-center gap-1 z-20"
+          style={{ bottom: 'calc(var(--bottom-offset) + 0.25rem)' }}
         >
           <motion.div
             animate={{ y: [0, 8, 0] }}

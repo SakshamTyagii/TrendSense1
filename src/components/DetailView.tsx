@@ -168,7 +168,8 @@ export default function DetailView() {
       animate={{ opacity: 1, y: 0 }}
       exit={{ opacity: 0, y: '100%' }}
       transition={{ type: 'spring', damping: 25, stiffness: 200 }}
-      className="fixed inset-0 z-50 bg-[#0a0a0f] overflow-y-auto"
+      className="fixed inset-0 z-40 bg-[#0a0a0f] overflow-y-auto"
+      style={{ paddingBottom: 'var(--bottom-offset)' }}
     >
       {/* Hero */}
       <div className="relative h-72 sm:h-80">

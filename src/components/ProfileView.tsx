@@ -31,7 +31,8 @@ export default function ProfileView() {
       animate={{ opacity: 1, x: 0 }}
       exit={{ opacity: 0, x: '100%' }}
       transition={{ type: 'spring', damping: 25, stiffness: 200 }}
-      className="fixed inset-0 z-50 bg-[#0a0a0f] overflow-y-auto"
+      className="fixed inset-0 z-40 bg-[#0a0a0f] overflow-y-auto"
+      style={{ paddingBottom: 'var(--bottom-offset)' }}
     >
       {/* Header */}
       <div className="flex items-center justify-between p-4 border-b border-white/5">
@@ -71,7 +72,7 @@ export default function ProfileView() {
         </div>
 
         {/* Stats */}
-        <div className="grid grid-cols-4 gap-3 mb-8">
+        <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 mb-8">
           {menuItems.map(item => (
             <div key={item.label} className="bg-white/5 rounded-2xl p-4 text-center">
               <item.icon className={`w-5 h-5 mx-auto mb-2 ${item.color}`} />

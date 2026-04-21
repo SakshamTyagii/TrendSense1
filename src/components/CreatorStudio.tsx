@@ -193,7 +193,7 @@ export default function CreatorStudio() {
         animate={{ opacity: 1, x: 0 }}
         exit={{ opacity: 0, x: '100%' }}
         transition={{ type: 'spring', damping: 25, stiffness: 200 }}
-        className="fixed inset-0 z-50 bg-[#0a0a0f] flex flex-col items-center justify-center px-6"
+        className="fixed inset-0 z-40 bg-[#0a0a0f] flex flex-col items-center justify-center px-6"
       >
         <div className="w-16 h-16 rounded-full bg-purple-500/10 flex items-center justify-center mb-4">
           <Sparkles className="w-8 h-8 text-purple-400" />
@@ -232,7 +232,8 @@ export default function CreatorStudio() {
       animate={{ opacity: 1, x: 0 }}
       exit={{ opacity: 0, x: '100%' }}
       transition={{ type: 'spring', damping: 25, stiffness: 200 }}
-      className="fixed inset-0 z-50 bg-[#0a0a0f] overflow-y-auto"
+      className="fixed inset-0 z-40 bg-[#0a0a0f] overflow-y-auto"
+      style={{ paddingBottom: 'var(--bottom-offset)' }}
     >
       {/* Header */}
       <div className="sticky top-0 z-20 bg-[#0a0a0f]/90 backdrop-blur-xl border-b border-white/5">

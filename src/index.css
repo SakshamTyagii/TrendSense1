@@ -44,6 +44,13 @@
   src: url(https://fonts.gstatic.com/s/dmsans/v15/rP2tp2ywxg089UriI5-g4vlH9VoD8CmcqZG40F9JadbnoEwAkJxhTmH3.woff2) format('woff2');
 }
 
+:root {
+  --nav-height: 4.5rem;
+  --safe-bottom: env(safe-area-inset-bottom, 0px);
+  --safe-top: env(safe-area-inset-top, 0px);
+  --bottom-offset: calc(var(--nav-height) + var(--safe-bottom));
+}
+
 html {
   scroll-behavior: smooth;
   -webkit-tap-highlight-color: transparent;
@@ -76,6 +83,14 @@ body {
 }
 .snap-always {
   scroll-snap-stop: always;
+}
+
+/* Horizontal snap scrolling for category tabs */
+.snap-x-mandatory {
+  scroll-snap-type: x proximity;
+}
+.snap-center {
+  scroll-snap-align: center;
 }
 
 /* Line clamp utilities */
