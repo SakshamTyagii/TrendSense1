@@ -3,6 +3,12 @@ import { motion, AnimatePresence } from 'framer-motion';
 import { useStore } from '../store/useStore';
 import { Zap, TrendingUp, Headphones, Video, Loader2 } from 'lucide-react';
 
+// Detect iOS in-app browsers (Instagram, WhatsApp, Snapchat, TikTok, etc.)
+// These WebViews block OAuth redirects — user must open in Safari instead.
+const ua = navigator.userAgent;
+const isIOSInAppBrowser =
+  /iPhone|iPad|iPod/.test(ua) && !/Safari\//.test(ua);
+
 export default function AuthScreen() {
   const { login, isAuthLoading } = useStore();
   const [activeProvider, setActiveProvider] = useState<string | null>(null);
@@ -20,6 +26,13 @@ export default function AuthScreen() {
 
   return (
     <div className="min-h-screen bg-black relative overflow-hidden flex flex-col">
+      {/* iOS in-app browser warning */}
+      {isIOSInAppBrowser && (
+        <div className="fixed top-0 left-0 right-0 z-[999] bg-amber-500 text-black text-sm font-semibold px-4 py-3 text-center">
+          ⚠️ Open this link in <strong>Safari</strong> to sign in.{' '}
+          <span className="underline">Tap ··· → Open in Safari</span>
+        </div>
+      )}
       {/* Animated background */}
       <div className="absolute inset-0">
         <div className="absolute inset-0 bg-gradient-to-br from-[#0a0a1a] via-[#0d0d2b] to-[#1a0a2e]" />

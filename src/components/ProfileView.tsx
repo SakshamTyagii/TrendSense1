@@ -2,16 +2,15 @@ import { motion } from 'framer-motion';
 import { ArrowLeft, LogOut, Volume2, Bell, Shield, ChevronRight, Bookmark, Clock, Sparkles, Film, Play, Crown } from 'lucide-react';
 import { useStore } from '../store/useStore';
 import { CATEGORIES } from '../types';
-import { isPro, getDailyUsage, FREE_LIMITS } from '../lib/subscription';
+import { FREE_LIMITS } from '../lib/subscription';
 
 export default function ProfileView() {
-  const { user, logout, setView, reels, scripts, togglePreference } = useStore();
+  const { user, logout, setView, reels, scripts, togglePreference, dailyUsage, isPro: userIsPro } = useStore();
 
   if (!user) return null;
 
   const myReels = reels.filter(r => r.creatorId === user.id);
-  const userIsPro = isPro();
-  const usage = getDailyUsage();
+  const usage = dailyUsage;
 
   const menuItems = [
     { icon: Bookmark, label: 'Saved Stories', count: user.savedStories.length, color: 'text-indigo-400' },
@@ -93,13 +92,14 @@ export default function ProfileView() {
             ]).map(item => {
               const used = usage[item.key];
               const limit = userIsPro ? Infinity : FREE_LIMITS[item.key];
+              const isOverLimit = !userIsPro && used > limit;
               const pct = userIsPro ? 0 : Math.min((used / limit) * 100, 100);
               return (
                 <div key={item.key} className="bg-white/5 rounded-xl p-3">
                   <div className="flex items-center justify-between mb-2">
                     <span className="text-sm text-gray-300">{item.label}</span>
-                    <span className="text-xs text-gray-500">
-                      {used}{userIsPro ? '' : `/${limit}`}
+                    <span className={`text-xs ${isOverLimit ? 'text-red-400' : 'text-gray-500'}`}>
+                      {used}{userIsPro ? '' : `/${limit}`}{isOverLimit ? ' · over limit' : ''}
                     </span>
                   </div>
                   {!userIsPro && (

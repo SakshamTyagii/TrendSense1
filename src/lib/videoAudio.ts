@@ -10,18 +10,31 @@ export async function generateVideoVoiceover(
   scriptText: string,
   voiceStyle: VoiceStyle = 'energetic',
 ): Promise<{ blob: Blob; durationMs: number }> {
-  const res = await fetch('/api/tts', {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ text: scriptText.slice(0, 5000), style: voiceStyle }),
-  });
+  const maxRetries = 2;
+  let lastError: Error | null = null;
 
-  if (!res.ok) throw new Error(`TTS API ${res.status}`);
-  const blob = await res.blob();
-  if (blob.size === 0) throw new Error('Empty audio from TTS');
+  for (let attempt = 0; attempt < maxRetries; attempt++) {
+    try {
+      const res = await fetch('/api/tts', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ text: scriptText.slice(0, 5000), style: voiceStyle }),
+      });
 
-  const durationMs = await detectAudioDuration(blob);
-  return { blob, durationMs };
+      if (!res.ok) throw new Error(`TTS API ${res.status}`);
+      const blob = await res.blob();
+      if (blob.size === 0) throw new Error('Empty audio from TTS');
+
+      const durationMs = await detectAudioDuration(blob);
+      return { blob, durationMs };
+    } catch (err) {
+      lastError = err instanceof Error ? err : new Error(String(err));
+      // Wait 1s before retry
+      if (attempt < maxRetries - 1) await new Promise(r => setTimeout(r, 1000));
+    }
+  }
+
+  throw lastError || new Error('TTS failed after retries');
 }
 
 // ── Detect audio duration ──────────────────────────────────────────────

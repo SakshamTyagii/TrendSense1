@@ -2,89 +2,15 @@ import { getCached, setCache } from './aiCache';
 import { apiFetch } from './apiFetch';
 import type { NewsItem, CreatorScript, TrendAnalysis } from '../types';
 
-// ─── AI call with dev fallback ─────────────────────────────────────────
-// Production: calls /api/ai proxy (keys on server)
-// Dev: calls AI providers directly using VITE_ keys from .env
-
-const isDev = import.meta.env.DEV;
-
-const AI_PROVIDERS = [
-  {
-    name: 'groq',
-    url: 'https://api.groq.com/openai/v1/chat/completions',
-    key: import.meta.env.VITE_GROQ_API_KEY || '',
-    model: 'llama-3.3-70b-versatile',
-  },
-  {
-    name: 'cerebras',
-    url: 'https://api.cerebras.ai/v1/chat/completions',
-    key: import.meta.env.VITE_CEREBRAS_API_KEY || '',
-    model: 'llama-3.3-70b',
-  },
-  {
-    name: 'gemini',
-    url: 'https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent',
-    key: import.meta.env.VITE_GEMINI_API_KEY || '',
-    model: '',
-  },
-  {
-    name: 'openrouter',
-    url: 'https://openrouter.ai/api/v1/chat/completions',
-    key: import.meta.env.VITE_OPENROUTER_API_KEY || '',
-    model: 'meta-llama/llama-3.3-70b-instruct:free',
-  },
-];
-
-async function callAIDirect(prompt: string, maxTokens = 800): Promise<string> {
-  for (const provider of AI_PROVIDERS) {
-    if (!provider.key) continue;
-    try {
-      if (provider.name === 'gemini') {
-        const response = await fetch(`${provider.url}?key=${provider.key}`, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            contents: [{ parts: [{ text: prompt }] }],
-            generationConfig: { temperature: 0.7, maxOutputTokens: maxTokens },
-          }),
-        });
-        if (!response.ok) continue;
-        const data = await response.json();
-        return data.candidates?.[0]?.content?.parts?.[0]?.text || '';
-      }
-
-      const response = await fetch(provider.url, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          Authorization: `Bearer ${provider.key}`,
-        },
-        body: JSON.stringify({
-          model: provider.model,
-          messages: [{ role: 'user', content: prompt }],
-          temperature: 0.7,
-          max_tokens: maxTokens,
-        }),
-      });
-      if (!response.ok) continue;
-      const data = await response.json();
-      return data.choices?.[0]?.message?.content || '';
-    } catch {
-      continue;
-    }
-  }
-  throw new Error('All AI providers failed');
-}
+// ─── AI call — always goes through /api/ai server proxy ───────────────
+// API keys live ONLY on the server (Vercel env vars without VITE_ prefix).
+// No AI keys are ever bundled into the client JS.
 
 async function callAI(type: string, prompt: string, maxTokens = 800): Promise<string> {
-  if (isDev) {
-    return callAIDirect(prompt, maxTokens);
-  }
-
   const response = await apiFetch('/api/ai', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ type, prompt }),
+    body: JSON.stringify({ type, prompt, maxTokens }),
   });
 
   if (!response.ok) {

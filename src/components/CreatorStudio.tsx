@@ -86,8 +86,10 @@ export default function CreatorStudio() {
     navigator.clipboard.writeText(text);
     setCopied(true);
     setTimeout(() => setCopied(false), 2000);
-    // Track usage
-    if (user) trackUsageWithServer(user.id, 'scripts').catch(() => {});
+    // Track usage and update reactive store
+    if (user) trackUsageWithServer(user.id, 'scripts')
+      .then(() => useStore.getState().incrementUsage('scripts'))
+      .catch(() => {});
   };
 
   const handlePlayVoiceover = () => {
@@ -109,7 +111,9 @@ export default function CreatorStudio() {
         return;
       }
       downloadScript(exportData.script, `trendsense-${format}`);
-      if (user) trackUsageWithServer(user.id, 'scripts').catch(() => {});
+      if (user) trackUsageWithServer(user.id, 'scripts')
+        .then(() => useStore.getState().incrementUsage('scripts'))
+        .catch(() => {});
     }
   };
 
@@ -126,7 +130,7 @@ export default function CreatorStudio() {
     if (!videoFile || !news || !user) return;
     setIsUploading(true);
 
-    let videoUrl = videoPreviewUrl || URL.createObjectURL(videoFile);
+    let videoUrl: string | null = null;
 
     try {
       const filePath = `${user.id}/${Date.now()}-${videoFile.name}`;
@@ -139,7 +143,14 @@ export default function CreatorStudio() {
         videoUrl = publicUrl.publicUrl;
       }
     } catch {
-      console.warn('Supabase Storage not available, using local blob URL');
+      console.warn('Supabase Storage upload failed');
+    }
+
+    if (!videoUrl) {
+      // Upload to Supabase Storage failed — don't save a reel with a dead blob URL
+      setIsUploading(false);
+      alert('Video upload failed. Please check your Supabase Storage bucket is set up and try again.');
+      return;
     }
 
     const reel: CreatorReel = {
@@ -148,7 +159,7 @@ export default function CreatorStudio() {
       creatorId: user.id,
       creatorName: user.name,
       creatorAvatar: user.avatar,
-      videoUrl,
+      videoUrl: videoUrl,
       thumbnailUrl: '',
       caption: reelCaption || `My take on: ${news.title}`,
       likes: 0,
@@ -157,12 +168,15 @@ export default function CreatorStudio() {
       createdAt: new Date().toISOString(),
     };
 
-    addReel(reel);
-
-    setIsUploading(false);
-    setUploadSuccess(true);
-    setVideoFile(null);
-    setReelCaption('');
+    addReel(reel).then(() => {
+      setIsUploading(false);
+      setUploadSuccess(true);
+      setVideoFile(null);
+      setReelCaption('');
+    }).catch(() => {
+      setIsUploading(false);
+      alert('Failed to save reel. Please try again.');
+    });
   };
 
   const handleRemoveVideo = () => {

@@ -133,9 +133,11 @@ export default function VideoGenerator() {
       setVideoBlob(blob);
       setPhase('done');
 
-      // Track usage after successful generation
+      // Track usage after successful generation and update reactive store
       if (user) {
-        trackUsageWithServer(user.id, 'videoGenerations').catch(() => {});
+        trackUsageWithServer(user.id, 'videoGenerations')
+          .then(() => useStore.getState().incrementUsage('videoGenerations'))
+          .catch(() => {});
       }
     } catch (err: any) {
       console.error('Video generation failed:', err);

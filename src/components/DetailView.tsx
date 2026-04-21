@@ -107,9 +107,11 @@ export default function DetailView() {
     try {
       const blob = await fetchAudioBlob(narration);
       downloadBlob(blob, `trendsense-narration-${Date.now()}.mp3`);
-      // Track usage after successful download
+      // Track usage after successful download and update reactive store
       if (user) {
-        trackUsageWithServer(user.id, 'narrations').catch(() => {});
+        trackUsageWithServer(user.id, 'narrations')
+          .then(() => useStore.getState().incrementUsage('narrations'))
+          .catch(() => {});
       }
     } catch {
       // Silently fail — user can retry
@@ -298,11 +300,13 @@ export default function DetailView() {
             </div>
             <div className="space-y-3">
               {news.trendAnalysis.viralHooks.filter(h => h).map((hook, i) => (
-                <motion.button
+                <motion.div
                   key={i}
+                  role="button"
+                  tabIndex={0}
                   whileTap={{ scale: 0.97 }}
                   onClick={() => handleHookTap(hook)}
-                  className="w-full text-left bg-gradient-to-r from-yellow-500/8 to-orange-500/8 border border-yellow-500/20 rounded-2xl p-4 group hover:border-yellow-500/40 hover:bg-yellow-500/10 transition-all"
+                  className="w-full text-left bg-gradient-to-r from-yellow-500/8 to-orange-500/8 border border-yellow-500/20 rounded-2xl p-4 group hover:border-yellow-500/40 hover:bg-yellow-500/10 transition-all cursor-pointer"
                 >
                   <div className="flex items-start justify-between gap-3">
                     <div className="flex items-start gap-3 flex-1">
@@ -320,7 +324,7 @@ export default function DetailView() {
                       )}
                     </button>
                   </div>
-                </motion.button>
+                </motion.div>
               ))}
             </div>
           </section>

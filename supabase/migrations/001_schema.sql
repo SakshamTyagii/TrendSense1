@@ -64,8 +64,7 @@ create table if not exists public.usage_tracking (
   usage_date date not null default current_date,
   scripts integer not null default 0,
   narrations integer not null default 0,
-  reel_uploads integer not null default 0,
-  explanations integer not null default 0,
+  video_generations integer not null default 0,
   unique(user_id, usage_date)
 );
 

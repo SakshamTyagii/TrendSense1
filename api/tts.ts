@@ -54,10 +54,24 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
 
     const chunks: Buffer[] = [];
     await new Promise<void>((resolve, reject) => {
-      audioStream.on('data', (chunk: Buffer) => chunks.push(chunk));
+      let lastDataAt = Date.now();
+      audioStream.on('data', (chunk: Buffer) => {
+        chunks.push(chunk);
+        lastDataAt = Date.now();
+      });
       audioStream.on('end', () => resolve());
       audioStream.on('error', (err: Error) => reject(err));
-      setTimeout(() => reject(new Error('TTS generation timed out')), 30_000);
+      // Stall detection: fail only if no data arrives for 15s (not total time)
+      const stallCheck = setInterval(() => {
+        if (Date.now() - lastDataAt > 15_000) {
+          clearInterval(stallCheck);
+          reject(new Error('TTS stream stalled — no data for 15s'));
+        }
+      }, 3_000);
+      audioStream.on('end', () => clearInterval(stallCheck));
+      audioStream.on('error', () => clearInterval(stallCheck));
+      // Hard cap at 55s (under Vercel's 60s limit)
+      setTimeout(() => { clearInterval(stallCheck); reject(new Error('TTS generation timed out')); }, 55_000);
     });
 
     tts.close();

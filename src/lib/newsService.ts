@@ -1,29 +1,7 @@
 import type { NewsItem, Category } from '../types';
 import { apiFetch } from './apiFetch';
 
-const isDev = import.meta.env.DEV;
-const NEWS_API_KEY = import.meta.env.VITE_NEWS_API_KEY || '';
-const NEWS_API_BASE = 'https://newsapi.org/v2';
-
 // ─── Retry with exponential backoff ────────────────────────────────────
-
-async function fetchWithRetry(url: string, options?: RequestInit, retries = 3): Promise<Response> {
-  for (let attempt = 0; attempt < retries; attempt++) {
-    try {
-      const response = await fetch(url, options);
-      // Don't retry on client errors (4xx), only on server errors (5xx)
-      if (response.ok || (response.status >= 400 && response.status < 500)) {
-        return response;
-      }
-      if (attempt === retries - 1) return response;
-    } catch (err) {
-      if (attempt === retries - 1) throw err;
-    }
-    // Exponential backoff: 1s, 2s, 4s
-    await new Promise(r => setTimeout(r, 1000 * Math.pow(2, attempt)));
-  }
-  throw new Error('Max retries reached');
-}
 
 async function apiFetchWithRetry(url: string, retries = 3): Promise<Response> {
   for (let attempt = 0; attempt < retries; attempt++) {
@@ -51,29 +29,8 @@ function categorizeArticle(title: string, description: string): Category {
   return 'world';
 }
 
-const categoryToQuery: Record<Category, string> = {
-  tech: 'technology OR AI OR software',
-  politics: 'politics OR government OR election',
-  finance: 'finance OR stock market OR economy',
-  sports: 'sports OR football OR basketball',
-  entertainment: 'entertainment OR movies OR music',
-  world: 'world news OR international',
-};
-
 async function fetchFromApi(category?: Category, query?: string): Promise<any> {
-  if (isDev && NEWS_API_KEY) {
-    // Dev mode: call NewsAPI directly (API key is only in local .env, never in production build)
-    const searchQuery = query || (category ? categoryToQuery[category] : 'trending news');
-    const url = `${NEWS_API_BASE}/everything?q=${encodeURIComponent(searchQuery)}&sortBy=publishedAt&pageSize=30&language=en&apiKey=${NEWS_API_KEY}`;
-    const response = await fetchWithRetry(url);
-    if (!response.ok) {
-      const err = await response.json().catch(() => ({ message: 'Failed to fetch news' }));
-      throw new Error(err.message || `News API error (${response.status})`);
-    }
-    return response.json();
-  }
-
-  // Production: call server-side proxy — API key is NEVER in the browser
+  // Always use server-side proxy — API key is NEVER in the browser bundle
   const params = new URLSearchParams();
   if (query) params.set('query', query);
   else if (category) params.set('category', category);
@@ -105,8 +62,17 @@ export async function fetchNews(category?: Category, query?: string): Promise<Ne
       const sourceName = article.source?.name || 'Unknown';
       const cat = categorizeArticle(article.title, article.description);
 
+      // Stable ID derived from the article URL so it survives page reloads.
+      // Falls back to title-based hash if URL is missing.
+      const raw = article.url || article.title || `${index}`;
+      let hash = 0;
+      for (let i = 0; i < raw.length; i++) {
+        hash = ((hash << 5) - hash + raw.charCodeAt(i)) | 0;
+      }
+      const stableId = `news-${Math.abs(hash).toString(36)}`;
+
       return {
-        id: `news-${Date.now()}-${index}`,
+        id: stableId,
         title: article.title,
         description: article.description,
         explanation: '',

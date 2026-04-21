@@ -119,8 +119,8 @@ export default function FeedCard({ news, index, isActive }: FeedCardProps) {
         {/* Category + Trend Score */}
         <motion.div
           initial={{ opacity: 0, y: 10 }}
-          animate={isActive ? { opacity: 1, y: 0 } : {}}
-          transition={{ delay: 0.2 }}
+          animate={{ opacity: 1, y: 0 }}
+          transition={{ delay: isActive ? 0.2 : 0 }}
           className="flex items-center gap-2 mb-3"
         >
           <span className={`text-xs font-bold uppercase tracking-wider px-3 py-1 rounded-full bg-gradient-to-r ${categoryColors[news.category]} text-white`}>
@@ -145,8 +145,8 @@ export default function FeedCard({ news, index, isActive }: FeedCardProps) {
         {/* Headline */}
         <motion.h2
           initial={{ opacity: 0, y: 15 }}
-          animate={isActive ? { opacity: 1, y: 0 } : {}}
-          transition={{ delay: 0.3 }}
+          animate={{ opacity: 1, y: 0 }}
+          transition={{ delay: isActive ? 0.3 : 0 }}
           className="text-2xl sm:text-3xl font-black text-white leading-tight mb-3 max-w-lg"
         >
           {news.title}
@@ -155,8 +155,8 @@ export default function FeedCard({ news, index, isActive }: FeedCardProps) {
         {/* Source */}
         <motion.div
           initial={{ opacity: 0 }}
-          animate={isActive ? { opacity: 1 } : {}}
-          transition={{ delay: 0.4 }}
+          animate={{ opacity: 1 }}
+          transition={{ delay: isActive ? 0.4 : 0 }}
           className="flex items-center gap-2 mb-3"
         >
           <span className="text-xs text-gray-300 bg-white/10 px-2 py-1 rounded-md backdrop-blur-sm">
@@ -167,8 +167,8 @@ export default function FeedCard({ news, index, isActive }: FeedCardProps) {
         {/* Preview text */}
         <motion.div
           initial={{ opacity: 0, y: 10 }}
-          animate={isActive ? { opacity: 1, y: 0 } : {}}
-          transition={{ delay: 0.5 }}
+          animate={{ opacity: 1, y: 0 }}
+          transition={{ delay: isActive ? 0.5 : 0 }}
         >
           <p className="text-gray-300 text-sm leading-relaxed line-clamp-3 max-w-lg mb-4">
             {(news.trendAnalysis?.whatsGoingOn || news.explanation) ? (news.trendAnalysis?.whatsGoingOn || news.explanation || '').slice(0, 200) + '...' : news.description}
@@ -178,8 +178,8 @@ export default function FeedCard({ news, index, isActive }: FeedCardProps) {
         {/* Action buttons row */}
         <motion.div
           initial={{ opacity: 0, y: 10 }}
-          animate={isActive ? { opacity: 1, y: 0 } : {}}
-          transition={{ delay: 0.6 }}
+          animate={{ opacity: 1, y: 0 }}
+          transition={{ delay: isActive ? 0.6 : 0 }}
           className="flex items-center gap-3"
         >
           <button

@@ -1,7 +1,8 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { motion } from 'framer-motion';
 import { Play, Heart, Sparkles } from 'lucide-react';
 import { useStore } from '../store/useStore';
+import { supabase } from '../lib/supabase';
 import ReelPlayer from './ReelPlayer';
 import type { CreatorReel } from '../types';
 
@@ -10,15 +11,47 @@ interface ReelCarouselProps {
 }
 
 export default function ReelCarousel({ newsId }: ReelCarouselProps) {
-  const { reels, setView, setCreatorMode } = useStore();
+  const { reels: storeReels, setView, setCreatorMode } = useStore();
   const [activeReel, setActiveReel] = useState<CreatorReel | null>(null);
+  const [fetchedReels, setFetchedReels] = useState<CreatorReel[]>([]);
+  const [loaded, setLoaded] = useState(false);
 
-  const newsReels = reels.filter(r => r.newsId === newsId);
+  // Fetch reels for this specific news story from Supabase (all creators)
+  useEffect(() => {
+    let cancelled = false;
+    supabase
+      .from('reels')
+      .select('*, profiles(name, avatar_url)')
+      .eq('news_id', newsId)
+      .order('created_at', { ascending: false })
+      .limit(20)
+      .then(({ data }) => {
+        if (cancelled || !data) { setLoaded(true); return; }
+        const mapped: CreatorReel[] = data.map((r: any) => ({
+          id: r.id, newsId: r.news_id, creatorId: r.creator_id,
+          creatorName: r.profiles?.name || 'Creator',
+          creatorAvatar: r.profiles?.avatar_url || `https://api.dicebear.com/7.x/avataaars/svg?seed=${r.creator_id}`,
+          videoUrl: r.video_url, thumbnailUrl: r.thumbnail_url || '', caption: r.caption,
+          likes: r.likes, views: r.views, duration: r.duration, createdAt: r.created_at,
+        }));
+        setFetchedReels(mapped);
+        setLoaded(true);
+      });
+    return () => { cancelled = true; };
+  }, [newsId]);
+
+  // Merge: show fetched reels, but also include any just-uploaded reel from the store
+  // that might not be in fetchedReels yet (avoids a "disappears then reappears" flash)
+  const fetchedIds = new Set(fetchedReels.map(r => r.id));
+  const newStoreReels = storeReels.filter(r => r.newsId === newsId && !fetchedIds.has(r.id));
+  const newsReels = [...newStoreReels, ...fetchedReels];
 
   const handleCreateReel = () => {
     setCreatorMode(true);
     setView('creator');
   };
+
+  if (!loaded) return null; // Don't flash empty state while fetching
 
   if (newsReels.length === 0) {
     return (

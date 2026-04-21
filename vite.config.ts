@@ -25,9 +25,10 @@ export default defineConfig(async () => {
     },
     server: {
       // Proxy /api/* to Vercel dev server during local development
+      // Run: vercel dev (starts on port 3000 by default)
       proxy: {
         '/api': {
-          target: 'http://localhost:3001',
+          target: 'http://localhost:3000',
           changeOrigin: true,
         },
       },

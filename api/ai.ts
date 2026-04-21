@@ -2,10 +2,10 @@ import type { VercelRequest, VercelResponse } from '@vercel/node';
 import { authenticateRequest } from './_auth';
 
 // Server-side AI API keys: NEVER sent to browser
-const GROQ_API_KEY = process.env.GROQ_API_KEY || '';
-const CEREBRAS_API_KEY = process.env.CEREBRAS_API_KEY || '';
-const GEMINI_API_KEY = process.env.GEMINI_API_KEY || '';
-const OPENROUTER_API_KEY = process.env.OPENROUTER_API_KEY || '';
+const GROQ_API_KEY = process.env.GROQ_API_KEY || process.env.VITE_GROQ_API_KEY || '';
+const CEREBRAS_API_KEY = process.env.CEREBRAS_API_KEY || process.env.VITE_CEREBRAS_API_KEY || '';
+const GEMINI_API_KEY = process.env.GEMINI_API_KEY || process.env.VITE_GEMINI_API_KEY || '';
+const OPENROUTER_API_KEY = process.env.OPENROUTER_API_KEY || process.env.VITE_OPENROUTER_API_KEY || '';
 
 // Provider cooldown tracking (per server instance)
 const COOLDOWN_MS = 15 * 60 * 1000;
