@@ -252,7 +252,7 @@ export default function CreatorStudio() {
         </div>
 
         {/* Tabs */}
-        <div className="flex px-4 gap-1 pb-3">
+        <div className="flex px-4 gap-1 pb-3 h-scroll">
           {[
             { id: 'script' as const, label: 'Script', icon: FileText },
             { id: 'voiceover' as const, label: 'Voiceover', icon: Mic },

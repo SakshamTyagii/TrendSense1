@@ -13,6 +13,7 @@ const DetailView = lazy(() => import('./components/DetailView'));
 const CreatorStudio = lazy(() => import('./components/CreatorStudio'));
 const SearchView = lazy(() => import('./components/SearchView'));
 const ProfileView = lazy(() => import('./components/ProfileView'));
+const Onboarding = lazy(() => import('./components/Onboarding'));
 
 function LoadingFallback() {
   return (
@@ -24,6 +25,7 @@ function LoadingFallback() {
 
 export default function App() {
   const { isAuthenticated, isAuthLoading, currentView, setView, initAuth, user } = useStore();
+  const needsOnboarding = useStore(s => s.needsOnboarding);
   const navigate = useNavigate();
   const location = useLocation();
   const [checkoutToast, setCheckoutToast] = useState<string | null>(null);
@@ -101,6 +103,14 @@ export default function App() {
           {checkoutToast}
         </div>
       )}
+
+      {/* Onboarding overlay */}
+      {isAuthenticated && needsOnboarding && (
+        <Suspense fallback={<LoadingFallback />}>
+          <Onboarding />
+        </Suspense>
+      )}
+
       <Suspense fallback={<LoadingFallback />}>
         <Routes>
           {/* Public route — login */}
@@ -159,7 +169,7 @@ export default function App() {
       </Suspense>
 
       {/* Persistent bottom nav — visible on ALL authenticated screens */}
-      {isAuthenticated && <BottomNav />}
+      {isAuthenticated && !needsOnboarding && <BottomNav />}
     </div>
   );
 }

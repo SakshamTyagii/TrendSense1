@@ -99,6 +99,38 @@ export interface CreatorInsight {
   engagementTips: string[];
 }
 
+// ── Onboarding & Personalization Types ───────────────────────────────────
+
+export type UserIntent = 'educational' | 'entertainment' | 'content_creation' | 'general_knowledge';
+export type ContentFormat = 'reels' | 'scripts' | 'audio';
+
+export interface IntentProfile {
+  content_creation: number;
+  entertainment: number;
+  education: number;
+  general: number;
+}
+
+export interface OnboardingData {
+  intents: UserIntent[];
+  intentProfile: IntentProfile;
+  interests: string[];
+  contentFormatPrefs: ContentFormat[];
+}
+
+export const INTEREST_OPTIONS: { id: string; label: string; emoji: string }[] = [
+  { id: 'tech', label: 'Technology', emoji: '💻' },
+  { id: 'finance', label: 'Finance', emoji: '📈' },
+  { id: 'politics', label: 'Politics', emoji: '🏛️' },
+  { id: 'sports', label: 'Sports', emoji: '⚽' },
+  { id: 'entertainment', label: 'Entertainment', emoji: '🎬' },
+  { id: 'world', label: 'World', emoji: '🌍' },
+  { id: 'education', label: 'Education', emoji: '🎓' },
+  { id: 'science', label: 'Science', emoji: '🔬' },
+  { id: 'health', label: 'Health', emoji: '🏥' },
+  { id: 'business', label: 'Business', emoji: '💼' },
+];
+
 export interface CreatorReel {
   id: string;
   newsId: string;

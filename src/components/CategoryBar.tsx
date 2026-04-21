@@ -3,6 +3,7 @@ import { motion } from 'framer-motion';
 import { useStore } from '../store/useStore';
 import { CATEGORIES } from '../types';
 import type { Category } from '../types';
+import { Sparkles } from 'lucide-react';
 
 export default function CategoryBar() {
   const { selectedCategory, setCategory } = useStore();
@@ -17,8 +18,7 @@ export default function CategoryBar() {
     >
       <div
         ref={scrollRef}
-        className="flex items-center gap-2 px-4 pb-3 overflow-x-auto scrollbar-hide snap-x-mandatory"
-        style={{ scrollbarWidth: 'none' }}
+        className="flex items-center gap-2 px-4 pb-3 h-scroll snap-x-mandatory"
       >
         {allCategories.map(cat => {
           const isActive = selectedCategory === cat.id;
@@ -40,7 +40,10 @@ export default function CategoryBar() {
                   transition={{ type: 'spring', bounce: 0.2, duration: 0.4 }}
                 />
               )}
-              <span className="relative z-10">{cat.label}</span>
+              <span className="relative z-10 flex items-center gap-1">
+                {cat.id === null && <Sparkles className="w-3 h-3 text-indigo-400" />}
+                {cat.label}
+              </span>
             </motion.button>
           );
         })}

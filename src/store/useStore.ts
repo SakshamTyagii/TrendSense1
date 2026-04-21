@@ -1,8 +1,9 @@
 import { create } from 'zustand';
-import type { User, NewsItem, Category, CreatorScript, CreatorReel } from '../types';
+import type { User, NewsItem, Category, CreatorScript, CreatorReel, IntentProfile, ContentFormat } from '../types';
 import { fetchNews, searchNews } from '../lib/newsService';
 import { supabase } from '../lib/supabase';
 import { setCurrentUser, clearUsageCache, syncUsageFromServer } from '../lib/subscription';
+import { rankFeed, type EngagementEvent, type UserProfile } from '../lib/rankingService';
 
 // ─── BroadcastChannel for multi-tab usage sync ─────────────────────────
 // When one tab increments usage, all other open tabs update immediately.
@@ -10,6 +11,29 @@ let _usageChannel: BroadcastChannel | null = null;
 try {
   _usageChannel = new BroadcastChannel('ts_usage_sync');
 } catch { /* Safari private mode or old browser — graceful degradation */ }
+
+// ─── Engagement event batching ──────────────────────────────────────────
+let _engagementQueue: Array<{
+  user_id: string; news_id: string; event_type: string;
+  value: number; category: string; session_id: string; created_at: string;
+}> = [];
+let _flushTimer: ReturnType<typeof setInterval> | null = null;
+const _sessionId = `s-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+
+function flushEngagementQueue() {
+  if (_engagementQueue.length === 0) return;
+  const batch = [..._engagementQueue];
+  _engagementQueue = [];
+  supabase.from('user_engagement').insert(batch).then(({ error }) => {
+    if (error) console.warn('Engagement flush error:', error.message);
+  });
+}
+
+if (typeof window !== 'undefined') {
+  window.addEventListener('beforeunload', () => {
+    flushEngagementQueue();
+  });
+}
 
 interface AppState {
   // Auth
@@ -73,6 +97,16 @@ interface AppState {
   addToHistory: (newsId: string) => void;
   toggleSaved: (newsId: string) => void;
   togglePreference: (key: 'autoPlayAudio' | 'notifications') => void;
+
+  // Onboarding & Personalization
+  needsOnboarding: boolean;
+  userProfile: UserProfile | null;
+  engagementHistory: EngagementEvent[];
+  sessionEvents: EngagementEvent[];
+  feedReasons: Map<string, string>;
+  completeOnboarding: (intents: string[], intentProfile: IntentProfile, interests: string[], formatPrefs: ContentFormat[]) => Promise<void>;
+  trackEngagement: (newsId: string, eventType: EngagementEvent['event_type'], value?: number, category?: string) => void;
+  skipOnboarding: () => void;
 }
 
 export const useStore = create<AppState>((set, get) => ({
@@ -189,6 +223,46 @@ export const useStore = create<AppState>((set, get) => ({
           }
         }).catch(() => {});
 
+        // Check onboarding status + load user profile for ranking
+        supabase.from('profiles')
+          .select('onboarding_completed, intent_profile, preferred_categories, content_format_prefs')
+          .eq('id', su.id)
+          .single()
+          .then(({ data }) => {
+            if (!data) return;
+            if (!data.onboarding_completed) {
+              set({ needsOnboarding: true });
+            } else {
+              const profile: UserProfile = {
+                interests: data.preferred_categories || ['tech', 'finance', 'entertainment'],
+                intentProfile: data.intent_profile || { content_creation: 0, entertainment: 0.5, education: 0.5, general: 0.5 },
+                contentFormatPrefs: data.content_format_prefs || [],
+                onboardingCompleted: true,
+              };
+              set({ userProfile: profile, needsOnboarding: false });
+            }
+          });
+
+        // Load recent engagement history for ranking (last 7 days)
+        supabase.from('user_engagement')
+          .select('news_id, event_type, value, category, created_at')
+          .eq('user_id', su.id)
+          .gte('created_at', new Date(Date.now() - 7 * 86_400_000).toISOString())
+          .order('created_at', { ascending: false })
+          .limit(500)
+          .then(({ data }) => {
+            if (data) {
+              const events: EngagementEvent[] = data.map((r: any) => ({
+                news_id: r.news_id, event_type: r.event_type,
+                value: r.value, category: r.category, created_at: r.created_at,
+              }));
+              set({ engagementHistory: events });
+            }
+          });
+
+        // Start engagement flush timer
+        if (!_flushTimer) _flushTimer = setInterval(flushEngagementQueue, 5000);
+
         // Fetch all other user data in the background
         Promise.all([
           supabase.from('saved_stories').select('news_id').eq('user_id', su.id),
@@ -256,12 +330,17 @@ export const useStore = create<AppState>((set, get) => ({
       const news = await fetchNews(category);
       // Update cache
       const newsCache = { ...get().newsCache, [cacheKey]: { articles: news, fetchedAt: Date.now() } };
-      set({ 
-        news, 
-        filteredNews: news,
-        isLoadingNews: false,
-        newsCache,
-      });
+      
+      // Apply ranking for "For You" feed (no specific category)
+      const profile = get().userProfile;
+      if (!category && profile) {
+        const ranked = rankFeed(news, profile, get().engagementHistory, get().sessionEvents);
+        const rankedNews = ranked.map(r => r.news);
+        const reasons = new Map(ranked.map(r => [r.news.id, r.reason || '']));
+        set({ news, filteredNews: rankedNews, isLoadingNews: false, newsCache, feedReasons: reasons });
+      } else {
+        set({ news, filteredNews: news, isLoadingNews: false, newsCache });
+      }
     } catch (err: any) {
       console.error('Failed to load news:', err);
       set({ isLoadingNews: false, newsError: err?.message || 'Failed to load news. Please try again.' });
@@ -466,5 +545,65 @@ export const useStore = create<AppState>((set, get) => ({
       set({ user: updated });
       localStorage.setItem('trendsense_user', JSON.stringify(updated));
     }
+  },
+
+  // Onboarding & Personalization
+  needsOnboarding: false,
+  userProfile: null,
+  engagementHistory: [],
+  sessionEvents: [],
+  feedReasons: new Map(),
+
+  completeOnboarding: async (_intents, intentProfile, interests, formatPrefs) => {
+    const user = get().user;
+    if (!user) return;
+
+    await supabase.from('profiles').update({
+      onboarding_completed: true,
+      intent_profile: intentProfile,
+      preferred_categories: interests,
+      content_format_prefs: formatPrefs,
+    }).eq('id', user.id);
+
+    const profile: UserProfile = {
+      interests,
+      intentProfile,
+      contentFormatPrefs: formatPrefs,
+      onboardingCompleted: true,
+    };
+    const updatedUser = { ...user, preferences: { ...user.preferences, categories: interests as Category[] } };
+    set({ needsOnboarding: false, userProfile: profile, user: updatedUser });
+    localStorage.setItem('trendsense_user', JSON.stringify(updatedUser));
+
+    if (!_flushTimer) _flushTimer = setInterval(flushEngagementQueue, 5000);
+    get().loadNews();
+  },
+
+  skipOnboarding: () => {
+    const user = get().user;
+    if (!user) return;
+    supabase.from('profiles').update({ onboarding_completed: true }).eq('id', user.id).then(() => {});
+    const profile: UserProfile = {
+      interests: user.preferences.categories,
+      intentProfile: { content_creation: 0, entertainment: 0.5, education: 0.5, general: 0.5 },
+      contentFormatPrefs: [],
+      onboardingCompleted: true,
+    };
+    set({ needsOnboarding: false, userProfile: profile });
+  },
+
+  trackEngagement: (newsId, eventType, value = 1, category = '') => {
+    const user = get().user;
+    if (!user) return;
+    const event: EngagementEvent = {
+      news_id: newsId, event_type: eventType,
+      value, category, created_at: new Date().toISOString(),
+    };
+    const sessionEvents = [event, ...get().sessionEvents].slice(0, 15);
+    set({ sessionEvents });
+    _engagementQueue.push({
+      user_id: user.id, news_id: newsId, event_type: eventType,
+      value, category, session_id: _sessionId, created_at: event.created_at,
+    });
   },
 }));

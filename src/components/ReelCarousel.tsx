@@ -91,7 +91,8 @@ export default function ReelCarousel({ newsId }: ReelCarouselProps) {
         </div>
 
         {/* Horizontal scroll */}
-        <div className="flex gap-3 overflow-x-auto pb-2 scrollbar-hide" style={{ scrollbarWidth: 'none' }}>
+        <div className="h-scroll-fade">
+        <div className="flex gap-3 pb-2 h-scroll">
           {newsReels.map((reel) => (
             <motion.button
               key={reel.id}
@@ -139,6 +140,7 @@ export default function ReelCarousel({ newsId }: ReelCarouselProps) {
               </div>
             </motion.button>
           ))}
+        </div>
         </div>
       </section>
 

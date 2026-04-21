@@ -54,6 +54,8 @@
 html {
   scroll-behavior: smooth;
   -webkit-tap-highlight-color: transparent;
+  overflow-x: hidden;
+  max-width: 100vw;
 }
 
 body {
@@ -61,8 +63,14 @@ body {
   background: #0a0a0f;
   color: #ffffff;
   overflow-x: hidden;
+  max-width: 100vw;
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
+}
+
+#root {
+  overflow-x: hidden;
+  max-width: 100vw;
 }
 
 /* Hide scrollbar globally */
@@ -87,10 +95,55 @@ body {
 
 /* Horizontal snap scrolling for category tabs */
 .snap-x-mandatory {
-  scroll-snap-type: x proximity;
+  scroll-snap-type: x mandatory;
+  -webkit-overflow-scrolling: touch;
 }
 .snap-center {
   scroll-snap-align: center;
+}
+
+/* Premium horizontal scroll container */
+.h-scroll {
+  overflow-x: auto;
+  overflow-y: hidden;
+  -webkit-overflow-scrolling: touch;
+  overscroll-behavior-x: contain;
+  overscroll-behavior-y: none;
+  touch-action: pan-x;
+  scroll-snap-type: x mandatory;
+  -ms-overflow-style: none;
+  scrollbar-width: none;
+}
+.h-scroll::-webkit-scrollbar {
+  display: none;
+}
+.h-scroll > * {
+  scroll-snap-align: start;
+  flex-shrink: 0;
+}
+
+/* Edge fade overlay for horizontal scroll */
+.h-scroll-fade {
+  position: relative;
+  isolation: isolate;
+}
+.h-scroll-fade::before,
+.h-scroll-fade::after {
+  content: '';
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  width: 1.5rem;
+  z-index: 2;
+  pointer-events: none;
+}
+.h-scroll-fade::before {
+  left: 0;
+  background: linear-gradient(to right, #0a0a0f, transparent);
+}
+.h-scroll-fade::after {
+  right: 0;
+  background: linear-gradient(to left, #0a0a0f, transparent);
 }
 
 /* Line clamp utilities */

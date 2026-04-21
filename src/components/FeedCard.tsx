@@ -15,7 +15,7 @@ interface FeedCardProps {
 }
 
 export default function FeedCard({ news, index, isActive }: FeedCardProps) {
-  const { setSelectedNews, setView, isPlaying, currentAudioId, setPlaying, user, toggleSaved, addToHistory, setCreatorMode, updateNewsItem, loadReelsForNews } = useStore();
+  const { setSelectedNews, setView, isPlaying, currentAudioId, setPlaying, user, toggleSaved, addToHistory, setCreatorMode, updateNewsItem, loadReelsForNews, trackEngagement, feedReasons } = useStore();
   const reelCount = loadReelsForNews(news.id).length;
   const cardRef = useRef<HTMLDivElement>(null);
   const [isLoadingAudio, setIsLoadingAudio] = useState(false);
@@ -23,16 +23,27 @@ export default function FeedCard({ news, index, isActive }: FeedCardProps) {
   const isCurrentPlaying = isPlaying && currentAudioId === news.id;
   const isSaved = user?.savedStories.includes(news.id) || false;
 
+  // Engagement: view + dwell + skip tracking
+  const dwellStart = useRef<number>(0);
   useEffect(() => {
     if (isActive) {
       addToHistory(news.id);
-    }
-  }, [isActive]);
-
-  useEffect(() => {
-    if (!isActive && isCurrentPlaying) {
-      stopSpeaking();
-      setPlaying(false);
+      trackEngagement(news.id, 'view', 1, news.category);
+      dwellStart.current = Date.now();
+    } else {
+      if (dwellStart.current > 0) {
+        const seconds = (Date.now() - dwellStart.current) / 1000;
+        if (seconds < 1) {
+          trackEngagement(news.id, 'skip', 1, news.category);
+        } else if (seconds > 2) {
+          trackEngagement(news.id, 'dwell', seconds, news.category);
+        }
+        dwellStart.current = 0;
+      }
+      if (isCurrentPlaying) {
+        stopSpeaking();
+        setPlaying(false);
+      }
     }
   }, [isActive]);
 
@@ -60,23 +71,33 @@ export default function FeedCard({ news, index, isActive }: FeedCardProps) {
 
     speakText(narration, () => setPlaying(false));
     setPlaying(true, news.id);
+    trackEngagement(news.id, 'listen', 1, news.category);
   };
 
   const handleExpand = () => {
     setSelectedNews(news);
     setView('detail');
+    trackEngagement(news.id, 'expand', 1, news.category);
   };
 
   const handleCreator = () => {
     setSelectedNews(news);
     setCreatorMode(true);
     setView('creator');
+    trackEngagement(news.id, 'create', 1, news.category);
   };
 
   const handleShare = async () => {
     if (navigator.share) {
       await navigator.share({ title: news.title, text: news.description });
+      trackEngagement(news.id, 'share', 1, news.category);
     }
+  };
+
+  const handleToggleSaved = () => {
+    const wasSaved = isSaved;
+    toggleSaved(news.id);
+    trackEngagement(news.id, wasSaved ? 'unsave' : 'save', 1, news.category);
   };
 
   const categoryColors: Record<string, string> = {
@@ -116,6 +137,16 @@ export default function FeedCard({ news, index, isActive }: FeedCardProps) {
 
       {/* Content overlay */}
       <div className="relative z-10 h-full flex flex-col justify-end px-5 sm:px-6 pb-36">
+        {/* Feedback reason label */}
+        {feedReasons.get(news.id) && (
+          <motion.p
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            className="text-[10px] text-indigo-400/70 font-medium mb-1.5 tracking-wide uppercase"
+          >
+            {feedReasons.get(news.id)}
+          </motion.p>
+        )}
         {/* Category + Trend Score */}
         <motion.div
           initial={{ opacity: 0, y: 10 }}
@@ -227,7 +258,7 @@ export default function FeedCard({ news, index, isActive }: FeedCardProps) {
       <div className="absolute right-4 flex flex-col items-center gap-5 z-20" style={{ bottom: 'calc(var(--bottom-offset) + 3rem)' }}>
         <motion.button
           whileTap={{ scale: 0.9 }}
-          onClick={() => toggleSaved(news.id)}
+          onClick={handleToggleSaved}
           className="flex flex-col items-center gap-1"
         >
           {isSaved ? (
